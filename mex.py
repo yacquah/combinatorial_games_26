@@ -1,0 +1,1 @@
+# this function will find the minimum non-occupied space (find the first L position)
