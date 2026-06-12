@@ -33,7 +33,7 @@ Instead, we need to start finding $W_x$ in Chomp by using $W_1 = \mathcal{LD}L_0
 3. Now our $W_x$ should equal $W_{\text{desired level}}$ because if $[\text{desired level}]=0$, then we already outputted it. If $[\text{desired level}]=1$, then we know it already and we should not have looped to the next higher sheets.
 
 ### Function for generating $L_x$:
-Use supermex operator $\mathcal{M}$ on $W_x$
+Use supermex operator $\mathcal{M}$ on $W_x$.
 
 ## Drawing the result:
 We can have a function separate from the games that plots a grid, mapping out either the $W$ or $L$ sheets depending on what is inputted to it. 
