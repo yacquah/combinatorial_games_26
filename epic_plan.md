@@ -2,6 +2,7 @@
 ### Inputs
 - Size of square grid (integer such as 100x100 grid)
 - Desired target: Winner/Loser sheet, x-level (for example maybe we want to find $W_x$)
+
 ### Initialization
 - Initialize $W_x$ as $W_x$ which is empty
 - Initialize $L_x$ as $L_0$ which we should manually calculate
@@ -11,7 +12,7 @@
 ### Main
 Call "Generate $W_x$ function" with inputs of our initialized $W_x$, desired x-level, $L_x$, and grid size. 
 
-If the target is loser then call "Generate $L_x$ function" with input of $W_x$ after calling the $W_x$ function, and grid size
+If the target is loser then call "Generate $L_x$ function" with input of $W_x$ after calling the $W_x$ function, and grid size.
 
 ### Functions
 - Recursive operator $\mathcal{R}$ where $W_{x+1} = \mathcal{R}W_x$
@@ -33,3 +34,6 @@ Instead, we need to start finding $W_x$ in Chomp by using $W_1 = \mathcal{LD}L_0
 
 ### Function for generating $L_x$:
 Use supermex operator $\mathcal{M}$ on $W_x$
+
+## Drawing the result:
+We can have a function separate from the games that plots a grid, mapping out either the $W$ or $L$ sheets depending on what is inputted to it. 
