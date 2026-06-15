@@ -1,53 +1,63 @@
 import numpy as np
 import display
-import time 
+# import time 
+from numba import njit
 
+@njit
 def generate_Wx(Wx, Lx, desired_level):
     if(desired_level == 0): 
         return Wx
     
     # W1 is L0, a horizontal line from z=1, with an added spot at (0,0)
-    Wx = np.copy(Lx)
+    Wx = Lx.copy()
     Wx[0,0] = True
     for i in range(2, desired_level+1):
         Wx = left_shift(Wx | diagonal(supermex(Wx)))    # New Wx becomes L(I+DM)Wx
     return Wx
 
+@njit
 def left_shift(input_sheet):
     """
     Takes in input which is (I+DM)Wx (2d array of size compute_size by compute_size)
     Outputs Tx, which is every entry in input shifted to the left by 1 spot
     """
-    Tx = np.zeros_like(input_sheet)  # Empty array with same dimensions and type as Wx
-    Tx[:, :-1] = input_sheet[:, 1:]  # For all rows, copy index 1 to end of Wx
-                            # and paste to index 0 to second-last column of Tx
+    compute_size = input_sheet.shape[0]
+    Tx = np.zeros((compute_size, compute_size), dtype=np.bool_)  # Empty array with same dimensions and type as Wx
+    for z in range(compute_size):
+        for y in range(compute_size - 1):
+            Tx[z, y] = input_sheet[z, y + 1]
     return Tx
 
+@njit
 def diagonal(MWx):
-    Tx = np.copy(MWx)
-    z_indices = np.where(MWx[:, 0])[0]     # Gives an array of all z-values where (0, z*) is loser
-    if z_indices.size == 0: # No z* found within compute_size means it won't impact our output
-        return Tx
-    z_star = z_indices[0]
+    compute_size = MWx.shape[0]
+    z_star = -1
+    for z in range(compute_size):
+        if MWx[z, 0]:   # If we found a "True" then we found a loser position (z*)
+            z_star = z
+            break
+    if z_star == -1: # No z* found within compute_size means it won't impact our output
+        return MWx
 
-    t = np.arange(z_star+1) 
-    Tx[z_star-t, t] = True
+    for t in range(z_star+1):   # Add the diagonal
+        MWx[z_star-t, t] = True
     
-    return Tx
+    return MWx
 
+@njit
 def supermex(Wx):
     compute_size = Wx.shape[0]
 
     MWx = np.zeros((compute_size,compute_size), dtype=np.bool_)     # Our MWx is empty
-    Tx = np.copy(Wx)    # Editable copy of Wx
-    for y in range(compute_size): # Scan each column from z = 0 to z = compute_size
-        z_indices = np.where(~Tx[:, y])[0]  # Gives an array of the z-values in 
-                                            #the y column where (y,z) is 0 (first empty space)
-        if z_indices.size == 0: # If we find no empty spots, move to the next column
+    blocked_diagonals = np.zeros(compute_size*2, dtype=np.bool_)  # We can skip past blocked diagonals, marked by if z+y is a constant
+    for y in range(compute_size):   # Scan each column from z = 0 to z = compute_size 
+        next_available_z = -1
+        for z in range(compute_size):
+            if not Wx[z,y] and not blocked_diagonals[z+y]:  # First empty spot is False and not blocked)
+                next_available_z = z
+                break
+        if next_available_z == -1:
             continue
-
-        next_available_z = z_indices[0]
-
         MWx[next_available_z,y] = True
 
         if(next_available_z == 0):  # If we are at z=0 then we stop marking losers
@@ -57,9 +67,7 @@ def supermex(Wx):
         # because we will just move to next y column
 
         # Marking 45 degree diagonal as N
-        steps = min(next_available_z, compute_size-1-y)
-        t = np.arange(steps+1)
-        Tx[next_available_z-t, y+t] = True
+        blocked_diagonals[next_available_z + y] = True
     
     return MWx
 
@@ -75,24 +83,28 @@ compute_size = grid_size + desired_level
 Lx = np.zeros((compute_size,compute_size),dtype=np.bool_)  
 Wx = np.zeros((compute_size,compute_size),dtype=np.bool_)
 
+
+
 # Generating L0 (All 1s/losers in row z=1)
 Lx[1,:compute_size] = True
 
-generate_Wx(Wx, Lx, desired_level)   # Warm up benchmark
-start = time.perf_counter()     # Benchmark time start
+# generate_Wx(Wx, Lx, desired_level)   # Warm up benchmark
+# start = time.perf_counter()     # Benchmark time start
 
 Wx = generate_Wx(Wx, Lx, desired_level)
 
-end = time.perf_counter()       # Benchmark time stop
-print(f"Execution time: {end - start:.6f} seconds")
+# end = time.perf_counter()       # Benchmark time stop
+# print(f"Execution time: {end - start:.6f} seconds")
+
+
 
 if(is_winner == True):
     # Desired Wx of size grid_size is rows 0 to grid_size and columns 0 to grid_size of Wx
     final_Wx = Wx[:grid_size, :grid_size]  
     # print(final_Wx.astype(int))
-    display.output(final_Wx, grid_size, True, desired_level)
+    display.output(final_Wx, True, desired_level)
 else:
-    Lx = supermex(Wx, compute_size)
+    Lx = supermex(Wx)
     final_Lx = Lx[:grid_size, :grid_size]
     # print(final_Lx.astype(int))
-    display.output(final_Lx, grid_size, False, desired_level)
+    display.output(final_Lx, False, desired_level)

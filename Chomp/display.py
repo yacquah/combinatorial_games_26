@@ -1,8 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-def output(sheet, grid_size, is_winner, desired_level):
-
+def output(sheet, is_winner, desired_level):
+    grid_size = sheet.shape[0]
     fig, ax = plt.subplots(figsize=(8, 8), dpi=100)
 
     if(is_winner == True):
