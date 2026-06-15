@@ -1,5 +1,6 @@
 import numpy as np
 import display
+import time
 
 # There's an option to use for loops + njit instead of using np.arange/np.where
 # for faster code
@@ -34,7 +35,13 @@ desired_level = int(input("x-level?\n"))
 # Initialize Wx as all 0s. We don't need Lx because in Nim, W0 = MW0
 Wx = np.zeros((grid_size,grid_size),dtype=np.bool_)
 
+generate_Wx(Wx, 1, grid_size)   # Warm up benchmark
+start = time.perf_counter()     # Benchmark time start
+
 Wx = generate_Wx(Wx, desired_level, grid_size)
+
+end = time.perf_counter()       # Benchmark time stop
+print(f"Execution time: {end - start:.6f} seconds")
 
 if(is_winner == True):
     # print(Wx.astype(int))
