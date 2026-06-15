@@ -1,21 +1,20 @@
 import matplotlib.pyplot as plt
 import numpy as np
-import time
 
 def output(sheet, is_winner, desired_level):
-    
+
     grid_size = sheet.shape[0]
 
-    fig,ax = plt.subplots(figsize=(8, 8), dpi=100)
+    _, ax = plt.subplots(figsize=(8, 8), dpi=100)
 
-    if(is_winner == True):
+    if is_winner:
         ax.set_title("W" + str(desired_level) + " with size " + str(grid_size))
     else:
         ax.set_title("L" + str(desired_level) + " with size " + str(grid_size))
     ax.set_xlabel("y")
     ax.set_ylabel("z")
 
-    ax.imshow(sheet.astype(np.uint8), cmap="binary", origin="lower", vmin=0, vmax=1, interpolation='none')
+    ax.imshow(sheet.astype(np.uint8), cmap="binary", origin="lower", vmin=0, vmax=1)
 
     raw_step = max(1, grid_size / 8)
     magnitude = 10 ** int(np.log10(raw_step)) if raw_step >= 1 else 1
