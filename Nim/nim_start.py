@@ -6,7 +6,7 @@ import time
 # for faster code
 
 def generate_Wx(Wx, desired_level, grid_size):
-    if(desired_level == 0): 
+    if desired_level == 0:
         return Wx
     for i in range(1, desired_level+1):
         Wx = Wx | supermex(Wx,grid_size)    # New Wx becomes Wx + MWx
