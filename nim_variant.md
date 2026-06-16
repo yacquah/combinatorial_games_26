@@ -42,3 +42,8 @@ $W_{x+1} = (I+S)L_x+\sum\limits_{t=1}^{x}{(I + \mathcal{S}^{t+1})L_{x-t}}$
 $W_{x+1} = (I+S)L_x+\sum\limits_{t=1}^{x}{L_{x-t}} + \sum\limits_{t=1}^{x}{\mathcal{S}^{t+1}L_{x-t}}$
 
 $W_{x+1} = (I+S)L_x+\sum\limits_{t=1}^{x}{L_{x-t}} + \mathcal{S}\sum\limits_{t=1}^{x}{\mathcal{S}^{t}L_{x-t}}$
+
+If the first term of $W_x$ is $A_x=\sum\limits_{t=1}^{x}{L_{x-t}}$ and second term is $B_x=\sum\limits_{t=1}^{x}{\mathcal{S}^tL_{x-t}}$
+then:
+
+$W_{x+1} = (I+S)L_x + A_x+\mathcal{S}B_x$

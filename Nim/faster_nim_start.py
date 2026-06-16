@@ -6,6 +6,12 @@ from numba import njit
 # import time
 
 def main():
+    """
+    Main runs the Nim instant-winner/loser sheet generator.
+    User inputs grid size (String -> int), winner or loser (bool), desired x-level (int)
+    Outputs by calling display function, prints grid of black/white for sheet
+    """
+
     grid_size = int(input("Size of the grid you want to see:\n"))
     is_winner = input("Winner or loser? (W/L)\n") == 'W'
     desired_level = int(input("x-level?\n"))
@@ -29,7 +35,6 @@ def main():
         # print(Lx.astype(int))
         display.output(Lx, False, desired_level)
 
-# Using loops + njit instead of using np.arange/np.where for faster code
 @njit
 def generate_Wx(Wx, desired_level):
     if desired_level == 0:
@@ -44,7 +49,7 @@ def supermex(Wx):
     MWx = np.zeros((grid_size,grid_size), dtype=np.bool_)     # Our MWx is empty
     blocked_rows = np.zeros(grid_size, dtype=np.bool_)
 
-    for y in range(grid_size):  # Loop through each column 
+    for y in range(grid_size):  # Loop through each column
         next_available_z = -1
         for z in range(grid_size):
             if not Wx[z, y] and not blocked_rows[z]:    # If the position is 0 (loser)

@@ -23,7 +23,7 @@ def output(sheet, is_winner, desired_level):
                            key=lambda n: abs(n * magnitude - raw_step))
     step = max(int(step), 1)
 
-    major_ticks = np.arange(0, grid_size, step) #puts a major tick 
+    major_ticks = np.arange(0, grid_size, step) #puts a major tick
     ax.set_xticks(major_ticks)
     ax.set_yticks(major_ticks)
 
