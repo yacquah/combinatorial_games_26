@@ -21,16 +21,17 @@ import display
 from numba import njit
 # import time
 
-import numpy as np
-import display
-# import time
-from numba import njit
-
 def main():
+    """Collect custom execution parameters from user terminal inputs"""
+
     grid_size = int(input("Size of the grid you want to see:\n"))
     is_winner = input("Winner or loser? (W/L)\n") == 'W'
     desired_level = int(input("x-level?\n"))
 
+    # critical step: Compute Size Padding
+    # Because bit-shifting moves array data leftward, we scale our workspace
+    # up by adding the desired level to our grid size. This provides an internal safety
+    # padding so values do not get dropped or cut off out-of-bounds mid-calculation
     compute_size = grid_size + desired_level
 
     # Initialize Lx and Wx as all 0s
@@ -40,6 +41,7 @@ def main():
     # Generating L0 (All 1s/losers in row z=1)
     Lx[1,:compute_size] = True
 
+    # If asked for L0, directly display it
     if not is_winner and desired_level==0:
         final_Lx = Lx[:grid_size, :grid_size]
         display.output(final_Lx, False, desired_level)
@@ -48,31 +50,42 @@ def main():
         # generate_Wx(Wx, Lx, desired_level)   # Warm up benchmark
         # start = time.perf_counter()     # Benchmark time start
 
+        # Run our optimized logic tree functions to evaluate the boards
         Wx = generate_Wx(Wx, Lx, desired_level)
 
         # end = time.perf_counter()       # Benchmark time stop
         # print(f"Execution time: {end - start:.6f} seconds")
 
+        # Output Routing: Clean and display the data
         if is_winner:
-            # Desired Wx of size grid_size is rows 0 to grid_size and columns 0 to grid_size of Wx
+            # Slice the padded matrix down to the requested size to drop the computational padding
             final_Wx = Wx[:grid_size, :grid_size]
-            # print(final_Wx.astype(int))
             display.output(final_Wx, True, desired_level)
         else:
+            # Evaluate final losing states via our extraction algorithm
             Lx = supermex(Wx)
+            # Slice matrix to clean size bounds
             final_Lx = Lx[:grid_size, :grid_size]
-            # print(final_Lx.astype(int))
             display.output(final_Lx, False, desired_level)
 
 @njit
 def generate_Wx(Wx, Lx, desired_level):
-    if(desired_level == 0): 
+    """Iteratively build the instant-winner sheet W_x up to ``desired_level``.
+    Args:
+        Wx: Boolean grid representing the current instant-winner sheet.
+        Lx: Boolean grid representing the current loser sheet
+        desired_level: Target x-level to compute.
+
+    Returns:
+        The updated boolean grid for W_desired_level.
+    """
+    if desired_level == 0:
         return Wx
 
     # W1 is L0, a horizontal line from z=1, with an added spot at (0,0)
     Wx = Lx.copy()
     Wx[0,0] = True
-    for i in range(2, desired_level+1):
+    for _ in range(2, desired_level+1):
         Wx = left_shift(Wx | diagonal(supermex(Wx)))    # New Wx becomes L(I+DM)Wx
     return Wx
 
@@ -97,9 +110,10 @@ def left_shift(input_sheet):
         The spatially translated grid sheet.
     """
     compute_size = input_sheet.shape[0]
-    Tx = np.zeros((compute_size, compute_size), dtype=np.bool_)  # Empty array with same dimensions and type as Wx
+    # Empty array with same dimensions and type as Wx
+    Tx = np.zeros((compute_size, compute_size), dtype=np.bool_)
     for z in range(compute_size):
-    # we stop at column index 'compute_size - 1' to avoid lookahead (when our code looks at a future item in a list or array before actually moving to it) index crashes
+    # we stop at column index 'compute_size - 1' to avoid lookahead index crashes
         for y in range(compute_size - 1):
             # take the state from the right neighbor (y + 1) and pull it left (y)
             Tx[z, y] = input_sheet[z, y + 1]
@@ -133,10 +147,10 @@ def diagonal(MWx):
 
 # process step 2: Plot the downward diagonal lines branching from our z* coordinate
     for t in range(z_star+1):   # Add the diagonal
-    # traces a 45-degree diagonal down-right by subtracting row indices 
+    # traces a 45-degree diagonal down-right by subtracting row indices
     # while adding column indices
         MWx[z_star-t, t] = True
-    
+
     return MWx
 
 @njit
@@ -159,21 +173,24 @@ def supermex(Wx):
     compute_size = Wx.shape[0]
 
     MWx = np.zeros((compute_size,compute_size), dtype=np.bool_)     # Our MWx is empty
-    blocked_diagonals = np.zeros(compute_size*2, dtype=np.bool_)  # We can skip past blocked diagonals, marked by if z+y is a constant
-    for y in range(compute_size):   # Scan each column from z = 0 to z = compute_size 
+    # We can skip past blocked diagonals, marked by if z+y is a constant
+    blocked_diagonals = np.zeros(compute_size*2, dtype=np.bool_)
+    for y in range(compute_size):   # Scan each column from z = 0 to z = compute_size
         next_available_z = -1
         # Scan through the rows in this current column
         for z in range(compute_size):
-            if not Wx[z,y] and not blocked_diagonals[z+y]:  # First empty spot is False and not blocked)
+            # First empty spot is False and not blocked)
+            if not Wx[z,y] and not blocked_diagonals[z+y]:
                 next_available_z = z
                 break
+
         # If the entire column yields no valid open index, skip to the next column
         if next_available_z == -1:
             continue
         # Log this valid location on our tracking sheet
         MWx[next_available_z,y] = True
 
-        if(next_available_z == 0):  # If we are at z=0 then we stop marking losers
+        if next_available_z == 0: # If we are at z=0 then we stop marking losers
             break
 
         # We don't need to mark all z greater than the first empty spot we found
@@ -186,43 +203,5 @@ def supermex(Wx):
     return MWx
 
 #---------------------------- Running Main Function ----------------------------
-# Collect custom execution parameters from user terminal inputs
-grid_size = int(input("Size of the grid you want to see:\n"))
-is_winner = (input("Winner or loser? (W/L)\n") == 'W')
-desired_level = int(input("x-level?\n"))
-
-# critical step: Compute Size Padding
-# Because bit-shifting moves array data leftward, we scale our workspace 
-# up by adding the desired level to our grid size. This provides an internal safety 
-# padding so values do not get dropped or cut off out-of-bounds mid-calculation
-compute_size = grid_size + desired_level
-
-# Initialize Lx and Wx as all 0s
-Lx = np.zeros((compute_size,compute_size),dtype=np.bool_)  
-Wx = np.zeros((compute_size,compute_size),dtype=np.bool_)
-
-
-
-# Generating L0 (All 1s/losers in row z=1)
-Lx[1,:compute_size] = True
-
-# generate_Wx(Wx, Lx, desired_level)   # Warm up benchmark
-# start = time.perf_counter()     # Benchmark time start
-
-# Run our optimized logic tree functions to evaluate the boards
-Wx = generate_Wx(Wx, Lx, desired_level)
-
-# end = time.perf_counter()       # Benchmark time stop
-# print(f"Execution time: {end - start:.6f} seconds")
-
-# Output Routing: Clean and display the data
-if(is_winner == True):
-    # Slice the padded matrix down to the exact requested size to drop the computational padding
-    final_Wx = Wx[:grid_size, :grid_size]
-    display.output(final_Wx, True, desired_level)
-else:
-    # Evaluate final losing states via our extraction algorithm
-    Lx = supermex(Wx)
-    # Slice matrix to clean size bounds
-    final_Lx = Lx[:grid_size, :grid_size]
-    display.output(final_Lx, False, desired_level)
+if __name__ == "__main__":
+    main()
