@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "combinatorial-games-26"
+version = "0.1.0"
+description = "Optimized Python generators for finite Nim, Chomp, and Nim-variant winner and loser sheets."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "matplotlib>=3.8",
+    "numba>=0.59",
+    "numpy>=1.26",
+]
+
+[project.scripts]
+faster-nim = "Nim.faster_nim_start:main"
+faster-chomp = "Chomp.faster_chomp_start:main"
+nim-variant = "nim_variant.nim_variant_start:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["Nim*", "Chomp*", "nim_variant*", "utils*"]
+namespaces = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
