@@ -6,8 +6,8 @@ rendered grid coordinates are y and z.
 """
 
 import numpy as np
-import display # Local plotting helper in Nim/display.py.
 from numba import njit
+from utils.display import output
 # import time
 
 @njit
@@ -91,11 +91,11 @@ def main():
 
     if is_winner:
         # print(Wx.astype(int))
-        display.output(Wx, True, desired_level)
+        output(Wx, True, desired_level)
     else:
         Lx = supermex(Wx)
         # print(Lx.astype(int))
-        display.output(Lx, False, desired_level)
+        output(Lx, False, desired_level)
 
 
 if __name__ == "__main__":

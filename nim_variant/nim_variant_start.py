@@ -2,8 +2,8 @@
 move  is introduced: to take away the same number of chips from all piles."""
 
 import numpy as np
-import display
 from numba import njit
+from utils.display import output
 
 def main():
     """Prompt for a Nim sheet request, compute it, and display the result."""
@@ -21,11 +21,11 @@ def main():
 
     if is_winner:
         final_Wx = Wx[:grid_size, :grid_size]
-        display.output(final_Wx, True, desired_level)
+        output(final_Wx, True, desired_level)
     else:
         Lx = supermex(Wx)
         final_Lx = Lx[:grid_size, :grid_size]
-        display.output(final_Lx, False, desired_level)
+        output(final_Lx, False, desired_level)
 
 @njit
 def generate_Wx(Ax, Bx, desired_level):

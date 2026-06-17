@@ -17,8 +17,8 @@ optimization process:
 """
 
 import numpy as np
-import display
 from numba import njit
+from utils.display import output
 # import time
 
 def main():
@@ -44,7 +44,7 @@ def main():
     # If asked for L0, directly display it
     if not is_winner and desired_level==0:
         final_Lx = Lx[:grid_size, :grid_size]
-        display.output(final_Lx, False, desired_level)
+        output(final_Lx, False, desired_level)
 
     else:
         # generate_Wx(Wx, Lx, desired_level)   # Warm up benchmark
@@ -60,13 +60,13 @@ def main():
         if is_winner:
             # Slice the padded matrix down to the requested size to drop the computational padding
             final_Wx = Wx[:grid_size, :grid_size]
-            display.output(final_Wx, True, desired_level)
+            output(final_Wx, True, desired_level)
         else:
             # Evaluate final losing states via our extraction algorithm
             Lx = supermex(Wx)
             # Slice matrix to clean size bounds
             final_Lx = Lx[:grid_size, :grid_size]
-            display.output(final_Lx, False, desired_level)
+            output(final_Lx, False, desired_level)
 
 @njit
 def generate_Wx(Wx, Lx, desired_level):
