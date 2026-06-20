@@ -69,7 +69,7 @@ Remove *k* chips from one pile and *2k* from another pile.
 $(x,y,z) \rightarrow (x-t, y-2t, z)$ \
 $(x,y,z) \rightarrow (x-2t, y-t, z)$ \
 $(x,y,z) \rightarrow (x-t, y, z-2t)$ \
-$(x,y,z) \rightarrow (x, y-t, z-t)$ \
+$(x,y,z) \rightarrow (x-2t, y, z-t)$ \
 $(x,y,z) \rightarrow (x, y-t, z-2t)$ \
 $(x,y,z) \rightarrow (x, y-2t, z-t)$
 
