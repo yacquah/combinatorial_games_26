@@ -102,6 +102,9 @@ $(x,y,z) \rightarrow (x, y, z-k\gcd(x,y))$
 ### 3 Heap LCM-bounded subtraction
 Subtract 1 to least common multiple of two piles from the other pile. 
 
-$(x,y,z) \rightarrow (x-k\operatorname{lcm}(y,z), y, z)$ \
-$(x,y,z) \rightarrow (x, y-k\operatorname{lcm}(x,z), z)$ \
-$(x,y,z) \rightarrow (x, y, z-k\operatorname{lcm}(x,y))$
+$(x,y,z) \rightarrow (x-t, y, z)$ \
+where $1\leq t\leq \operatorname{lcm}(y,z)$\
+$(x,y,z) \rightarrow (x, y-t, z)$ \
+where $1\leq t\leq \operatorname{lcm}(x,z)$\
+$(x,y,z) \rightarrow (x-, y, z-t)$ \
+where $1\leq t\leq \operatorname{lcm}(x,y)$

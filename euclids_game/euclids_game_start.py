@@ -61,10 +61,10 @@ def compute_euclid_space(max_size):
     # 3D History arrays indexed as [x, z, y]
     L_history = np.zeros((max_size, max_size, max_size), dtype=np.bool_)
     W_history = np.zeros((max_size, max_size, max_size), dtype=np.bool_)
-    
+
     for x in range(max_size):
         Wx = np.zeros((max_size, max_size), dtype=np.bool_)
-        
+
         # Step 1: Inter-sheet moves (Looking back at smaller x)
         # If x == 0, W0 correctly remains completely blank!
         if x > 0:
