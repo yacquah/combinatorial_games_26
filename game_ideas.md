@@ -106,5 +106,5 @@ $(x,y,z) \rightarrow (x-t, y, z)$ \
 where $1\leq t\leq \operatorname{lcm}(y,z)$\
 $(x,y,z) \rightarrow (x, y-t, z)$ \
 where $1\leq t\leq \operatorname{lcm}(x,z)$\
-!$(x,y,z) \rightarrow (x-, y, z-t)$ \
+$(x,y,z) \rightarrow (x, y, z-t)$ \
 where $1\leq t\leq \operatorname{lcm}(x,y)$
