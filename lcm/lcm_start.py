@@ -103,7 +103,6 @@ def main():
 
     compute_size = max(grid_size, desired_level + 1)
 
-    print(f"Computing 3D space up to size {compute_size}...")
     W_space, L_space = compute_lcm_space(compute_size)
 
     if is_winner:

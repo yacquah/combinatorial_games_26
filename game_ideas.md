@@ -108,3 +108,35 @@ $(x,y,z) \rightarrow (x, y-t, z)$ \
 where $1\leq t\leq \operatorname{lcm}(x,z)$\
 $(x,y,z) \rightarrow (x, y, z-t)$ \
 where $1\leq t\leq \operatorname{lcm}(x,y)$
+
+### Akiyama 3D Wythoff Positive Nim
+3 piles of chips $(x,y,z)$ 
+
+We can take away $a,b,c$ chips: $(x,y,z) \rightarrow (x-a,y-b,z-c)$
+
+$\set{(x,y,z)\in \mathbb{N}_0^3 | xyz(x-y)(y-z)(z-x)=0, x+y+z > 0}$
+
+Basically $x,y,z \geq 0$ and the possible moves are:
+
+Remove any number of chips from 1 pile only:\
+$(x,y,z) \rightarrow (x-t,y,z)$\
+$(x,y,z) \rightarrow (x,y-t,z)$\
+$(x,y,z) \rightarrow (x,y,z-t)$\
+Remove any number of chips from two piles only (same or different number of chips):\
+$(x,y,z) \rightarrow (x-s,y-t,z)$\
+$(x,y,z) \rightarrow (x-s,y,z-t)$\
+$(x,y,z) \rightarrow (x,y-s,z-t)$\
+Remove the same number of chips from two piles, and remove any number of chips from the other pile:\
+$(x,y,z) \rightarrow (x-s,y-s,z-t)$\
+$(x,y,z) \rightarrow (x-s,y-t,z-s)$\
+$(x,y,z) \rightarrow (x-t,y-s,z-s)$
+
+### 3 Heap Wythoff's Game but "3 times Unbalanced"
+Remove *k* chips from one pile and *3k* from another pile. On top of normal Nim moves.
+
+$(x,y,z) \rightarrow (x-t, y-3t, z)$ \
+$(x,y,z) \rightarrow (x-3t, y-t, z)$ \
+$(x,y,z) \rightarrow (x-t, y, z-3t)$ \
+$(x,y,z) \rightarrow (x-3t, y, z-t)$ \
+$(x,y,z) \rightarrow (x, y-t, z-3t)$ \
+$(x,y,z) \rightarrow (x, y-3t, z-t)$

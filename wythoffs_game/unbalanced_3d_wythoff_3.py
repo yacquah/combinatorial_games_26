@@ -6,9 +6,9 @@ one pile and 3k chips from another pile.
 
 import numpy as np
 from numba import njit
-from utils.display import output, output_multiple
+from utils.display import output_sheets, parse_sheet_specs
 
-@njit
+@njit(cache=True)
 def supermex(Wx, grid_size):
     """
     Intra-sheet supermex: computes L_x from W_x. 
@@ -42,7 +42,7 @@ def supermex(Wx, grid_size):
                     else: break
     return Lx
 
-@njit
+@njit(cache=True)
 def compute_sheets(max_size):
     """
     Computes W_history and L_history up to max_size.
@@ -134,38 +134,24 @@ def compute_sheets(max_size):
 
 
 def main():
-    grid_size = int(input("Size of the grid you want to see (y and z axes):\n"))
-    is_winner = input("Winner or loser? (W/L)\n").strip().upper() == 'W'
-    levels_input = input("x-level(s)? (Separate multiple with commas):\n")
-    desired_levels = [int(x.strip()) for x in levels_input.split(',')]
+    """Prompt for one or more sheet requests and display them together.
 
-    max_desired_level = max(desired_levels)
-    compute_size = max(grid_size, max_desired_level + 1)
+    Each requested sheet may have its own type, x-level, and size, e.g.
+    ``W8x16, L4x20, W16x32``.
+    """
+    print("Enter sheets as <W|L><level>x<size>, separated by commas.")
+    print("Example: W8x16, L4x20, W16x32")
+    specs = parse_sheet_specs(input("Sheets:\n"))
 
-    Wx, Lx = compute_sheets(compute_size)
+    compute_size = max(max(size, level + 1) for _, level, size in specs)
+    W_space, L_space = compute_sheets(compute_size)
 
-    if len(desired_levels) == 1:
-        level = desired_levels[0]
-        if is_winner:
-            sheet = Wx[level, :grid_size, :grid_size]
-            output(sheet, True, level)
-        else:
-            sheet = Lx[level, :grid_size, :grid_size]
-            output(sheet, False, level)
+    sheets = []
+    for is_winner, level, size in specs:
+        space = W_space if is_winner else L_space
+        sheets.append((space[level, :size, :size], is_winner, level))
+    output_sheets(sheets)
 
-    else:
-        sheets_to_display = []
-        titles = []
-        
-        for level in desired_levels:
-            if is_winner:
-                sheets_to_display.append(Wx[level, :grid_size, :grid_size])
-                titles.append(f"W{level} with size {grid_size}")
-            else:
-                sheets_to_display.append(Lx[level, :grid_size, :grid_size])
-                titles.append(f"L{level} with size {grid_size}")
-                
-        output_multiple(sheets_to_display, titles)
 
 if __name__ == "__main__":
     main()

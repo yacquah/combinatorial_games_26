@@ -16,7 +16,7 @@ the loser sheet L_x by resolving the intra-sheet moves.
 
 import numpy as np
 from numba import njit
-from utils.display import output
+from utils.display import output, output_multiple
 
 @njit
 def precompute_gcds(max_size):
@@ -62,7 +62,7 @@ def supermex_gcd(Wx, x, max_size, gcd_table):
 @njit
 def compute_gcd_space(max_size):
     """
-    Computes W and L sheets iteratively in strict O(N^3) time.
+    Computes W and L sheets iteratively in O(N^3) time.
     """
     L_history = np.zeros((max_size, max_size, max_size), dtype=np.bool_)
     W_history = np.zeros((max_size, max_size, max_size), dtype=np.bool_)
@@ -91,19 +91,40 @@ def main():
 
     grid_size = int(input("Size of the grid you want to see (y and z axes):\n"))
     is_winner = input("Winner or loser? (W/L)\n").strip().upper() == 'W'
-    desired_level = int(input("x-level?\n"))
 
-    compute_size = max(grid_size, desired_level + 1)
+    levels_input = input("x-level(s)? (Separate multiple with commas):\n")
+    desired_levels = [int(x.strip()) for x in levels_input.split(',')]
 
-    print(f"Computing 3D space up to size {compute_size} using O(1) step accumulators...")
+    # Calculate up to the highest requested x-level
+    max_desired_level = max(desired_levels)
+    compute_size = max(grid_size, max_desired_level + 1)
+
     W_space, L_space = compute_gcd_space(compute_size)
 
-    if is_winner:
-        sheet = W_space[desired_level, :grid_size, :grid_size]
-        output(sheet, True, desired_level)
+    # If the user only asked for 1 level, use the normal output function
+    if len(desired_levels) == 1:
+        level = desired_levels[0]
+        if is_winner:
+            sheet = W_space[level, :grid_size, :grid_size]
+            output(sheet, True, level)
+        else:
+            sheet = L_space[level, :grid_size, :grid_size]
+            output(sheet, False, level)
+            
+    # If they asked for multiple, package them up for output_multiple
     else:
-        sheet = L_space[desired_level, :grid_size, :grid_size]
-        output(sheet, False, desired_level)
+        sheets_to_display = []
+        titles = []
+        
+        for level in desired_levels:
+            if is_winner:
+                sheets_to_display.append(W_space[level, :grid_size, :grid_size])
+                titles.append(f"W{level} with size {grid_size}")
+            else:
+                sheets_to_display.append(L_space[level, :grid_size, :grid_size])
+                titles.append(f"L{level} with size {grid_size}")
+                
+        output_multiple(sheets_to_display, titles)
 
 
 if __name__ == "__main__":

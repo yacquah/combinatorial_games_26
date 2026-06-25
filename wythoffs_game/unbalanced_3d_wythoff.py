@@ -1,19 +1,17 @@
 """'Unbalanced 3D Wythoff' sheet generator.
 
-Normal 3-heap Nim, PLUS an unbalanced joint move: remove k chips from
-one pile and 2k chips from another pile (any of the 3 ordered pile-pairs).
+Normal 3-heap Nim, plus an additional move: remove k chips from
+one pile and 2k chips from another pile.
 """
 
 import numpy as np
 from numba import njit
-from utils.display import output
+from utils.display import output, output_multiple
 
 @njit
 def supermex(Wx, grid_size):
     """
     Intra-sheet supermex: computes L_x from W_x. 
-    Because Losers are sparse, the ray-firing inside only executes O(N) times
-    per sheet, making this function strictly O(N^2) overall per sheet.
     """
     Lx = np.zeros((grid_size, grid_size), dtype=np.bool_)
     blocked = np.copy(Wx)
@@ -25,27 +23,31 @@ def supermex(Wx, grid_size):
 
                 # Normal Nim on y
                 for t in range(1, grid_size):
-                    if y + t < grid_size: blocked[z, y + t] = True
+                    if y + t < grid_size:
+                        blocked[z, y + t] = True
                     else: break
 
                 # Normal Nim on z
                 for t in range(1, grid_size):
-                    if z + t < grid_size: blocked[z + t, y] = True
+                    if z + t < grid_size:
+                        blocked[z + t, y] = True
                     else: break
 
                 # Unbalanced y:z = 1:2  (y+t, z+2t)
                 for t in range(1, grid_size):
-                    if y + t < grid_size and z + 2 * t < grid_size: blocked[z + 2 * t, y + t] = True
+                    if y + t < grid_size and z + 2 * t < grid_size:
+                        blocked[z + 2 * t, y + t] = True
                     else: break
 
                 # Unbalanced y:z = 2:1  (y+2t, z+t)
                 for t in range(1, grid_size):
-                    if y + 2 * t < grid_size and z + t < grid_size: blocked[z + t, y + 2 * t] = True
+                    if y + 2 * t < grid_size and z + t < grid_size:
+                        blocked[z + t, y + 2 * t] = True
                     else: break
     return Lx
 
 @njit
-def compute_variant_space(max_size):
+def compute_sheets(max_size):
     """
     Computes W_history and L_history up to max_size.
     Uses 2D Rolling Accumulators to drop time complexity from O(N^3.5) to O(N^3).
@@ -54,9 +56,6 @@ def compute_variant_space(max_size):
     L_space = np.zeros((max_size, max_size, max_size), dtype=np.bool_)
     W_space = np.zeros((max_size, max_size, max_size), dtype=np.bool_)
 
-    # -------------------------------------------------------------
-    # Sliding Window 2D Accumulators
-    # -------------------------------------------------------------
     ever_lost = np.zeros((max_size, max_size), dtype=np.bool_) # Move 1 (x-t)
     
     L_prev1 = np.zeros((max_size, max_size), dtype=np.bool_)
@@ -134,23 +133,40 @@ def compute_variant_space(max_size):
 
 
 def main():
-    """Prompt for a variant sheet request, compute it, and display the result."""
+    """Prompt for a sheet request, compute it, and display the result."""
 
     grid_size = int(input("Size of the grid you want to see (y and z axes):\n"))
     is_winner = input("Winner or loser? (W/L)\n").strip().upper() == 'W'
-    desired_level = int(input("x-level?\n"))
+    levels_input = input("x-level(s)? (Separate multiple with commas):\n")
+    desired_levels = [int(x.strip()) for x in levels_input.split(',')]
 
-    compute_size = max(grid_size, desired_level + 1)
+    max_desired_level = max(desired_levels)
+    compute_size = max(grid_size, max_desired_level + 1)
 
-    print(f"Computing 3D space up to size {compute_size} using 2D Rolling Accumulators...")
-    W_space, L_space = compute_variant_space(compute_size)
+    Wx, Lx = compute_sheets(compute_size)
 
-    if is_winner:
-        sheet = W_space[desired_level, :grid_size, :grid_size]
-        output(sheet, True, desired_level)
+    if len(desired_levels) == 1:
+        level = desired_levels[0]
+        if is_winner:
+            sheet = Wx[level, :grid_size, :grid_size]
+            output(sheet, True, level)
+        else:
+            sheet = Lx[level, :grid_size, :grid_size]
+            output(sheet, False, level)
+
     else:
-        sheet = L_space[desired_level, :grid_size, :grid_size]
-        output(sheet, False, desired_level)
+        sheets_to_display = []
+        titles = []
+        
+        for level in desired_levels:
+            if is_winner:
+                sheets_to_display.append(Wx[level, :grid_size, :grid_size])
+                titles.append(f"W{level} with size {grid_size}")
+            else:
+                sheets_to_display.append(Lx[level, :grid_size, :grid_size])
+                titles.append(f"L{level} with size {grid_size}")
+                
+        output_multiple(sheets_to_display, titles)
 
 
 if __name__ == "__main__":

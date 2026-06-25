@@ -96,7 +96,6 @@ def main():
     compute_size = max(grid_size, desired_level + 1)
 
     # Generate the full 3D game space up to our safe computational bounds
-    print(f"Computing 3D space up to size {compute_size}... this might take a moment for large grids.")
     W_space, L_space = compute_subtract_a_square(compute_size)
 
     # Slice out the specific 2D sheet the user requested, trimmed to their viewing size
