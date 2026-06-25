@@ -25,9 +25,11 @@ of moves that lower x are accumulated into auxiliary sheets:
   * M3c  (x-t, y-s, z-s)  -> Dcum  (y,z diagonal; x free)
 """
 
+import re
+
 import numpy as np
 from numba import njit
-from utils.display import output_sheets, parse_sheet_specs
+from utils.display import output_multiple
 
 
 @njit(cache=True)
@@ -53,17 +55,22 @@ def supermex(Wx, grid_size):
 
 @njit(cache=True)
 def compute_sheets(max_size):
-    """Compute W_space and L_space for x-levels 0..max_size-1.
+    """Compute W_space, L_space, and Lcum_space for x-levels 0..max_size-1.
 
     Sheets are indexed [x, z, y]. The per-level work is fused into single in-place
     sweeps over reused scratch buffers (rather than allocating a fresh sheet for each
     shift / cumulative-OR), so the whole space is built in O(max_size^3) with a small
     constant factor and no per-level allocation churn.
+
+    Lcum_space[x] is the union (logical OR) of L_0..L_x, i.e. every losing position
+    that has appeared up through level x -- handy for seeing the P-positions trace
+    out their lines instead of just the lone pair on a single sheet.
     """
     n = max_size
     W_space = np.zeros((n, n, n), dtype=np.bool_)
     L_space = np.zeros((n, n, n), dtype=np.bool_)
-
+    Lcum_space = np.zeros((n, n, n), dtype=np.bool_)
+    Lcum = np.zeros((n, n), dtype=np.bool_)  # rolling OR of every Lx so far
     # Rolling auxiliary sheets, each accumulating one family of x-lowering moves.
     ever_lost = np.zeros((n, n), dtype=np.bool_)  # M1: any lower x, same (y, z)
     Acc3a = np.zeros((n, n), dtype=np.bool_)       # M3a: (x-s, y-s, z-t)
@@ -104,9 +111,10 @@ def compute_sheets(max_size):
 
         # ---------- Recover the loser sheet Lx ----------
         Lx = supermex(Wx, n)
-
+        Lcum |= Lx
         W_space[x] = Wx
         L_space[x] = Lx
+        Lcum_space[x] = Lcum
 
         # ---------- Fold Lx into the rolling accumulators for x+1 ----------
         # ever_lost |= Lx
@@ -151,28 +159,42 @@ def compute_sheets(max_size):
                 elif z > 0 and y > 0 and Dcum[z - 1, y - 1]:
                     Dcum[z, y] = True
 
-    return W_space, L_space
+    return W_space, L_space, Lcum_space
 
 
 def main():
     """Prompt for one or more sheet requests and display them together.
 
     Each requested sheet may have its own type, x-level, and size, e.g.
-    ``W8x16, L4x20, W16x32``.
+    ``W8x16, L4x20, C16x32``. Types are W (instant winners), L (losers on that
+    single sheet), and C (cumulative losers: every loser up through that level).
     """
-    print("Enter sheets as <W|L><level>x<size>, separated by commas.")
-    # print("Example: W8x16, L4x20, W16x32")
-    specs = parse_sheet_specs(input("Sheets:\n"))
+    print("Enter sheets as <W|L|C><level>x<size>, separated by commas.")
+    print("  W = instant winners, L = losers on that sheet, "
+          "C = cumulative losers (all losers up to that level).")
+
+    specs = []  # (type_char, level, size)
+    for token in input("Sheets:\n").split(','):
+        token = token.strip()
+        if not token:
+            continue
+        match = re.fullmatch(r'([WwLlCc])\s*(\d+)\s*[xX]\s*(\d+)', token)
+        if not match:
+            raise ValueError(
+                f"Could not parse sheet spec '{token}' (expected e.g. W8x16, C16x32)")
+        specs.append((match.group(1).upper(), int(match.group(2)), int(match.group(3))))
 
     # Compute one space big enough to cover every requested level and size.
     compute_size = max(max(size, level + 1) for _, level, size in specs)
-    W_space, L_space = compute_sheets(compute_size)
+    W_space, L_space, Lcum_space = compute_sheets(compute_size)
+    space_for = {'W': W_space, 'L': L_space, 'C': Lcum_space}
 
-    sheets = []
-    for is_winner, level, size in specs:
-        space = W_space if is_winner else L_space
-        sheets.append((space[level, :size, :size], is_winner, level))
-    output_sheets(sheets)
+    arrays, titles = [], []
+    for type_char, level, size in specs:
+        arrays.append(space_for[type_char][level, :size, :size])
+        label = "cumulative L0-" if type_char == 'C' else type_char
+        titles.append(f"{label}{level} with size {size}")
+    output_multiple(arrays, titles)
 
 
 if __name__ == "__main__":
