@@ -162,6 +162,32 @@ def compute_sheets(max_size):
     return W_space, L_space, Lcum_space
 
 
+def loser_triplets(max_level, size=None):
+    """Return every losing position (x, y, z) for x-levels 0..max_level, sorted.
+
+    Sorted by (x, y, z). Losers grow roughly linearly with x (up to ~3x out), so
+    the grid is sized to ``3 * max_level + 4`` by default to avoid clipping any of
+    them off the edge; pass ``size`` to override.
+    """
+    n = max(size or 0, 3 * max_level + 4)
+    _, L_space, _ = compute_sheets(n)
+
+    triplets = []
+    for x in range(max_level + 1):
+        zs, ys = np.where(L_space[x])  # L_space[x] is indexed [z, y]
+        for y, z in sorted(zip(ys.tolist(), zs.tolist())):
+            triplets.append((x, y, z))
+    return triplets
+
+
+def print_losers(max_level, size=None):
+    """Print every losing position (x, y, z) up through x = max_level, one per line."""
+    triplets = loser_triplets(max_level, size)
+    for x, y, z in triplets:
+        print(f"({x}, {y}, {z})")
+    print(f"\n{len(triplets)} losers for x = 0..{max_level}")
+
+
 def main():
     """Prompt for one or more sheet requests and display them together.
 
@@ -172,17 +198,31 @@ def main():
     print("Enter sheets as <W|L|C><level>x<size>, separated by commas.")
     print("  W = instant winners, L = losers on that sheet, "
           "C = cumulative losers (all losers up to that level).")
+    print("  T<level> (or T<level>x<size>) prints all loser triplets (x,y,z) up to that level.")
 
-    specs = []  # (type_char, level, size)
+    specs = []         # (type_char, level, size) for sheets to plot
+    triplet_reqs = []  # (level, size_or_None) for triplet printouts
     for token in input("Sheets:\n").split(','):
         token = token.strip()
         if not token:
             continue
+        tmatch = re.fullmatch(r'[Tt]\s*(\d+)(?:\s*[xX]\s*(\d+))?', token)
+        if tmatch:
+            size = int(tmatch.group(2)) if tmatch.group(2) else None
+            triplet_reqs.append((int(tmatch.group(1)), size))
+            continue
         match = re.fullmatch(r'([WwLlCc])\s*(\d+)\s*[xX]\s*(\d+)', token)
         if not match:
             raise ValueError(
-                f"Could not parse sheet spec '{token}' (expected e.g. W8x16, C16x32)")
+                f"Could not parse sheet spec '{token}' (expected e.g. W8x16, C16x32, T50)")
         specs.append((match.group(1).upper(), int(match.group(2)), int(match.group(3))))
+
+    # Print any requested triplet lists first.
+    for level, size in triplet_reqs:
+        print_losers(level, size)
+
+    if not specs:
+        return
 
     # Compute one space big enough to cover every requested level and size.
     compute_size = max(max(size, level + 1) for _, level, size in specs)

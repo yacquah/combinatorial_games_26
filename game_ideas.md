@@ -140,3 +140,57 @@ $(x,y,z) \rightarrow (x-t, y, z-3t)$ \
 $(x,y,z) \rightarrow (x-3t, y, z-t)$ \
 $(x,y,z) \rightarrow (x, y-t, z-3t)$ \
 $(x,y,z) \rightarrow (x, y-3t, z-t)$
+
+### 3 Heap Wythoff's Game Combined
+Very similar to Ryuo Nim for, which is solved and is Nim but you can also subtract 1 chip from two piles and 1 chip from three piles. 
+But here, you can subtract the same number of chips from two piles or same number of chips from three piles (instead of just one chip)
+
+Remove any number of chips from 1 pile only:\
+$(x,y,z) \rightarrow (x-t,y,z)$\
+$(x,y,z) \rightarrow (x,y-t,z)$\
+$(x,y,z) \rightarrow (x,y,z-t)$\
+Remove the same number of chips from two piles:\
+$(x,y,z) \rightarrow (x-t,y-t,z)$\
+$(x,y,z) \rightarrow (x-t,y,z-t)$\
+$(x,y,z) \rightarrow (x,y-t,z-t)$\
+Remove the same number of chips from all three piles:\
+$(x,y,z) \rightarrow (x-t,y-t,z-t)$
+
+### 3 Heap Restricted Wythoff's Game
+On top of Nim rules (remove any number of chips from 1 pile), you can also remove the same number of chips from two piles, as long as the number of chips removed is less than or equal to the size of the third untouched pile.
+
+Remove any number of chips from 1 pile only:\
+$(x,y,z) \rightarrow (x-t,y,z)$\
+$(x,y,z) \rightarrow (x,y-t,z)$\
+$(x,y,z) \rightarrow (x,y,z-t)$\
+Remove the same number of chips from two piles:\
+$(x,y,z) \rightarrow (x-t,y-t,z)$ where $t\leq z$\
+$(x,y,z) \rightarrow (x-t,y,z-t)$ where $t\leq y$\
+$(x,y,z) \rightarrow (x,y-t,z-t)$ where $t\leq x$
+
+### 3 Heap "Tax" Nim
+ Normal nim rules (remove any number of chips from 1 pile), but the other two non-empty untouched piles lose 1 chip each.  
+$$
+(x,y,z) \rightarrow
+\begin{cases}
+(x-t, \max(0, y-1), \max(0, z-1)) & \text{if } 0 < t \leq x \\
+(\max(0, x-1), y-t, \max(0, z-1)) & \text{if } 0 < t \leq y \\
+(\max(0, x-1), \max(0, y-1), z-t) & \text{if } 0 < t \leq z
+\end{cases}
+$$
+
+### 3 Heap Asymmetric Bounded Nim
+Three piles are ordered:
+
+You can remove any amount from Pile X.\
+$(x,y,z) \rightarrow (x-t,y,z)$
+
+You can remove chips from Pile Y, but the amount you remove cannot exceed the current size of Pile X.\
+$(x,y,z) \rightarrow (x,y-t,z)$ where $t<x$
+
+You can remove chips from Pile Z, but the amount you remove cannot exceed the current size of Pile Y.\
+$(x,y,z) \rightarrow (x,y,z-t)$ where $t<y$
+
+### 3-Heap Bounded Wythoff's Game
+Normal Nim but you can remove any number of chips from two piles, as long as the ratio of the chips is between 1:2 and 2:1.\
+For example if you take 4 chips from Pile X, you can take 2, 3, 4, 5, 6, 7, or 8 chips from Pile Y (or 0 which would be a standard Nim move)
