@@ -39,6 +39,17 @@ Where $a+b$ is a square (or $a+b+c$ is a square)
 ### 3 Heap Nim with Merging Piles
 Nim but you can merge piles together, leaving an empty pile behind. 
 
+### Chomp with Protected Diagonal
+Start with a three-row position represented by:
+
+$(x,y,z)$
+
+where $x \ge y \ge z$ if using row lengths, or use the column-height encoding from the paper.
+A move is like Chomp: choose a square and remove all squares weakly below/right of it.
+
+*Restriction:*
+A player may not choose a square on the main diagonal, unless it is the only legal move remaining.
+
 
 ### 3 Heap Subtract a Prime
 Similar to subtract a square, but you have to subtract prime numbers (so 0 and 1 chips are terminal positions). 
