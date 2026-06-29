@@ -186,8 +186,12 @@ def run_sheet_session(compute_sheets, row_is_z=True, triplet_default=None):
     prints all loser triplets (x, y, z) up to that level.
 
     Args:
-        compute_sheets: Callable ``n -> (W_space, L_space, Lcum_space)`` returning three
-            3D boolean arrays indexed ``[x, a, b]`` over the cube ``[0, n)^3``.
+        compute_sheets: Callable ``(depth, size) -> (W_space, L_space[, Lcum_space])``
+            returning 3D boolean arrays of shape ``(depth, size, size)`` indexed
+            ``[x, a, b]`` -- x-levels ``0..depth-1`` over the ``size x size`` (a, b) grid.
+            Depth (number of x-levels) and grid size are decoupled, so a low-level
+            request on a big grid only allocates the levels it needs. Returning just
+            ``(W, L)`` lets the C (cumulative-loser) sheets be derived from L on demand.
         row_is_z: Layout of each sheet's (a, b) axes -- True for (z, y), False for (y, z).
             Only affects how T triplets are reported (the rendered orientation is left
             untouched so it matches each generator's existing display).
@@ -221,8 +225,8 @@ def run_sheet_session(compute_sheets, row_is_z=True, triplet_default=None):
 
     # Print any requested triplet lists first.
     for level, size in triplet_reqs:
-        n = max(size or 0, triplet_default(level))
-        _, L_space, _ = compute_sheets(n)
+        grid = max(size or 0, triplet_default(level))
+        L_space = compute_sheets(level + 1, grid)[1]
         triplets = _loser_triplets(L_space, level, row_is_z)
         for x, y, z in triplets:
             print(f"({x}, {y}, {z})")
@@ -231,14 +235,27 @@ def run_sheet_session(compute_sheets, row_is_z=True, triplet_default=None):
     if not specs:
         return
 
-    # Compute one space big enough to cover every requested level and size.
-    compute_size = max(max(size, level + 1) for _, level, size in specs)
-    W_space, L_space, Lcum_space = compute_sheets(compute_size)
-    space_for = {'W': W_space, 'L': L_space, 'C': Lcum_space}
+    # Size the space to cover every request. Depth (number of x-levels) and grid size are sized
+    # independently, so a low-level request on a big grid no longer allocates a full cube. A
+    # generator may return just (W_space, L_space) to save memory; the cumulative-loser (C) sheets
+    # are then derived from L on demand (OR of L_0..L_level), so no full Lcum cube is materialized.
+    depth = max(level + 1 for _, level, _ in specs)
+    grid = max(size for _, _, size in specs)
+    result = compute_sheets(depth, grid)
+    W_space, L_space = result[0], result[1]
+    Lcum_space = result[2] if len(result) > 2 else None
 
     arrays, titles = [], []
     for type_char, level, size in specs:
-        arrays.append(space_for[type_char][level, :size, :size])
+        if type_char == 'W':
+            arr = W_space[level, :size, :size]
+        elif type_char == 'L':
+            arr = L_space[level, :size, :size]
+        elif Lcum_space is not None:
+            arr = Lcum_space[level, :size, :size]
+        else:
+            arr = L_space[:level + 1, :size, :size].any(axis=0)
+        arrays.append(arr)
         label = "cumulative L0-" if type_char == 'C' else type_char
         titles.append(f"{label}{level} with size {size}")
     output_multiple(arrays, titles)

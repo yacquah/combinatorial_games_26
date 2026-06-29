@@ -15,11 +15,20 @@ Moves, with x as the sheet level:
                             (x,   y,   z-t)                    single pile Z
                             (x,   y-a, z-b) ratio(a,b)         two-pile Y,Z
 
-The bounded-ratio two-pile move spans a 2D wedge of targets, so the usual shift-accumulator
-recurrence does not apply. We compute the full 3D space directly: a position is a Loser exactly when
-no move reaches another Loser. The wedge tests reduce to "is there a loser in this contiguous strip
-of a row/column", answered in O(1) with prefix-loser-counts over completed rows, columns, and
-sheets -- giving O(N^4) overall rather than the O(N^5) of a naive double scan.
+The bounded-ratio two-pile move spans a 2D wedge of valid offsets, but that wedge has a tiny
+generating set, which is what makes this O(N^3). The offsets form the cone with extreme rays (2,1)
+and (1,2); its determinant is 3 (non-unimodular), so those two rays alone do not hit every integer
+point -- the interior vector (1,1) fills the gap. Hence the Hilbert basis of the cone is exactly
+
+    {(1,1), (1,2), (2,1)},
+
+and every valid offset is a non-negative integer combination of these three. So instead of scanning
+the whole wedge behind each cell, we push each loser's "shadow" forward one basis step at a time with
+a 2D boolean accumulator: a cell is threatened iff a loser (or an already-threatened cell) sits one
+basis vector behind it. That makes each wedge test O(1).
+
+Because the basis vectors only reach back x-1 and x-2 along the level axis, the inter-sheet
+accumulators need just the two previous levels in memory (no 3D prefix arrays).
 
 W_x (instant winners) records the moves that lower x; L_x the losers. Sheets are indexed [x, y, z]
 (row y, column z); the game is symmetric in all three piles, so the orientation is immaterial.
@@ -30,132 +39,99 @@ from numba import njit
 from utils.display import run_sheet_session
 
 
-@njit
-def compute_sheets(N):
-    """Compute the W, L, and cumulative-L sheets over the cube ``[0, N)^3``.
+@njit(cache=True)
+def compute_sheets(depth, size):
+    """Compute the W and L sheets over x-levels ``0..depth-1`` on a ``size x size`` (y, z) grid.
+
+    Returns only ``(W, L)`` -- two ``(depth, size, size)`` boolean cubes -- to keep memory down at
+    large sizes (each cube is depth*size^2 bytes). Depth and grid size are decoupled, so requesting a
+    low x-level on a big grid no longer allocates a full size^3 cube. The cumulative-loser (C) sheets
+    are derived from L on demand by the display layer (OR of L_0..L_level), so no third cube is
+    stored.
 
     Returns:
         W: instant-winner positions (some move lowers x onto a loser).
         L: Loser (P-)positions.
-        Lcum: Lcum[x] is the OR of L_0..L_x (every loser seen up through level x).
     """
 
-    L = np.zeros((N, N, N), dtype=np.bool_)
-    W = np.zeros((N, N, N), dtype=np.bool_)
-    Lcum = np.zeros((N, N, N), dtype=np.bool_)
+    L = np.zeros((depth, size, size), dtype=np.bool_)
+    W = np.zeros((depth, size, size), dtype=np.bool_)
 
-    # Prefix loser-counts over completed sheets, used to test the two-pile wedges in O(1):
-    #   colpre[x, y, z] = # losers in sheet x, column z, rows 0..y   (column-cumulative)
-    #   rowpre[x, y, z] = # losers in sheet x, row y, columns 0..z   (row-cumulative)
-    colpre = np.zeros((N, N, N), dtype=np.int32)
-    rowpre = np.zeros((N, N, N), dtype=np.int32)
+    cumX = np.zeros((size, size), dtype=np.bool_)  # any loser at (y, z) on a strictly lower x-level
 
-    cumX = np.zeros((N, N), dtype=np.bool_)  # any loser at (y, z) on a strictly lower x-level
+    # Wedge "shadow" accumulators for the two inter-sheet moves. A_xy_p1 / A_xy_p2 hold the
+    # accumulator from the previous one / two x-levels (the only history the basis steps reach).
+    A_xy_p1 = np.zeros((size, size), dtype=np.bool_)
+    A_xy_p2 = np.zeros((size, size), dtype=np.bool_)
+    A_xz_p1 = np.zeros((size, size), dtype=np.bool_)
+    A_xz_p2 = np.zeros((size, size), dtype=np.bool_)
 
-    for x in range(N):
-        colseen = np.zeros(N, dtype=np.bool_)  # any loser so far in column z (rows < y), this sheet
+    for x in range(depth):
+        colseen = np.zeros(size, dtype=np.bool_)        # any loser in column z at rows < y, this sheet
+        A_xy_cur = np.zeros((size, size), dtype=np.bool_)  # this level's X,Y shadow (for next levels)
+        A_xz_cur = np.zeros((size, size), dtype=np.bool_)  # this level's X,Z shadow
+        A_yz = np.zeros((size, size), dtype=np.bool_)      # intra-sheet Y,Z shadow (this sheet only)
 
-        for y in range(N):
-            row_has = False                    # any loser in this row at a column < current z
+        for y in range(size):
+            row_has = False                          # any loser in this row at a column < z
 
-            for z in range(N):
-                # ---------- inter-sheet moves: these define the instant-winner sheet ----------
-                inst = False
+            for z in range(size):
+                # ---------- two-pile wedge shadows via the three basis vectors ----------
+                # X,Y move (offset in the x,y plane; z fixed): bases (1,1), (1,2), (2,1).
+                xy = False
+                if x >= 1 and y >= 1 and (L[x - 1, y - 1, z] or A_xy_p1[y - 1, z]):
+                    xy = True
+                elif x >= 1 and y >= 2 and (L[x - 1, y - 2, z] or A_xy_p1[y - 2, z]):
+                    xy = True
+                elif x >= 2 and y >= 1 and (L[x - 2, y - 1, z] or A_xy_p2[y - 1, z]):
+                    xy = True
+                A_xy_cur[y, z] = xy
 
-                # Single pile X: any loser at the same (y, z) on a lower level.
-                if cumX[y, z]:
-                    inst = True
+                # X,Z move (offset in the x,z plane; y fixed).
+                xz = False
+                if x >= 1 and z >= 1 and (L[x - 1, y, z - 1] or A_xz_p1[y, z - 1]):
+                    xz = True
+                elif x >= 1 and z >= 2 and (L[x - 1, y, z - 2] or A_xz_p1[y, z - 2]):
+                    xz = True
+                elif x >= 2 and z >= 1 and (L[x - 2, y, z - 1] or A_xz_p2[y, z - 1]):
+                    xz = True
+                A_xz_cur[y, z] = xz
 
-                # Two-pile X,Y: remove a from X (1..x), b from Y with b in [ceil(a/2), 2a].
-                if not inst:
-                    a_max = x if x < 2 * y else 2 * y
-                    for a in range(1, a_max + 1):
-                        xs = x - a
-                        b_lo = (a + 1) // 2
-                        b_hi = 2 * a if 2 * a < y else y
-                        if b_lo > b_hi:
-                            continue
-                        r1 = y - b_hi          # smallest target row
-                        r2 = y - b_lo          # largest target row
-                        cnt = colpre[xs, r2, z]
-                        if r1 > 0:
-                            cnt -= colpre[xs, r1 - 1, z]
-                        if cnt > 0:
-                            inst = True
-                            break
+                # Y,Z move (offset in the y,z plane; x fixed -> current sheet).
+                yz = False
+                if y >= 1 and z >= 1 and (L[x, y - 1, z - 1] or A_yz[y - 1, z - 1]):
+                    yz = True
+                elif y >= 1 and z >= 2 and (L[x, y - 1, z - 2] or A_yz[y - 1, z - 2]):
+                    yz = True
+                elif y >= 2 and z >= 1 and (L[x, y - 2, z - 1] or A_yz[y - 2, z - 1]):
+                    yz = True
+                A_yz[y, z] = yz
 
-                # Two-pile X,Z: remove a from X (1..x), b from Z with b in [ceil(a/2), 2a].
-                if not inst:
-                    a_max = x if x < 2 * z else 2 * z
-                    for a in range(1, a_max + 1):
-                        xs = x - a
-                        b_lo = (a + 1) // 2
-                        b_hi = 2 * a if 2 * a < z else z
-                        if b_lo > b_hi:
-                            continue
-                        c1 = z - b_hi
-                        c2 = z - b_lo
-                        cnt = rowpre[xs, y, c2]
-                        if c1 > 0:
-                            cnt -= rowpre[xs, y, c1 - 1]
-                        if cnt > 0:
-                            inst = True
-                            break
-
+                # ---------- decide winner / loser ----------
+                # Inter-sheet moves (lower x) define the instant-winner sheet.
+                inst = cumX[y, z] or xy or xz
                 W[x, y, z] = inst
-                winner = inst
 
-                # ---------- intra-sheet moves ----------
-                # Single pile Y: any loser above in this column.
-                if not winner and colseen[z]:
-                    winner = True
-                # Single pile Z: any loser to the left in this row.
-                if not winner and row_has:
-                    winner = True
-                # Two-pile Y,Z: remove a from Y (1..y), b from Z with b in [ceil(a/2), 2a].
-                if not winner:
-                    a_max = y if y < 2 * z else 2 * z
-                    for a in range(1, a_max + 1):
-                        ys = y - a
-                        b_lo = (a + 1) // 2
-                        b_hi = 2 * a if 2 * a < z else z
-                        if b_lo > b_hi:
-                            continue
-                        c1 = z - b_hi
-                        c2 = z - b_lo
-                        cnt = rowpre[x, ys, c2]    # completed row ys (< y) of this sheet
-                        if c1 > 0:
-                            cnt -= rowpre[x, ys, c1 - 1]
-                        if cnt > 0:
-                            winner = True
-                            break
+                # Intra-sheet moves: single pile Y (column), single pile Z (row), two-pile Y,Z.
+                winner = inst or colseen[z] or row_has or yz
 
                 if not winner:
                     L[x, y, z] = True
                     row_has = True
+                    cumX[y, z] = True   # remember this loser for higher x-levels' single-X move
 
-                # Extend this row's running prefix to include column z.
-                rowpre[x, y, z] = (rowpre[x, y, z - 1] if z > 0 else 0) + (1 if L[x, y, z] else 0)
-
-            # Row y is complete: fold its losers into the per-column "seen above" flags.
-            for z in range(N):
+            # Row y complete: fold its losers into the per-column "seen above" flags.
+            for z in range(size):
                 if L[x, y, z]:
                     colseen[z] = True
 
-        # Sheet x is complete: build its column-cumulative prefix and roll the lower-x union.
-        for z in range(N):
-            run = 0
-            for y in range(N):
-                if L[x, y, z]:
-                    run += 1
-                colpre[x, y, z] = run
-        for y in range(N):
-            for z in range(N):
-                if L[x, y, z]:
-                    cumX[y, z] = True
-                Lcum[x, y, z] = cumX[y, z]
+        # Sheet x complete: roll the inter-sheet accumulators forward for the next levels.
+        A_xy_p2[:] = A_xy_p1
+        A_xy_p1[:] = A_xy_cur
+        A_xz_p2[:] = A_xz_p1
+        A_xz_p1[:] = A_xz_cur
 
-    return W, L, Lcum
+    return W, L
 
 
 def main():

@@ -11,8 +11,14 @@ untouched pile:
                    (x,y,z) -> (x,   y-t, z-t) with t <= x
 
 Because the two-pile bound couples all three heaps, the usual shift-accumulator recurrence does not
-apply. Instead we compute the full 3D space directly, looking back at stored lower L-sheets for the
-x-reducing moves and running a (restricted) supermex for the moves that keep x fixed.
+apply, so we compute the sheets directly. The two x-reducing moves slide along a diagonal (both
+``(x-t, y-t, z)`` and ``(x-t, y, z-t)`` keep one coordinate fixed while two drop together), bounded
+by the untouched pile. Rather than scanning that whole diagonal per cell -- which made the original
+O(N^4) -- we track the most-recent loser on each diagonal and test "is it within the bound?" in
+O(1), giving O(N^3) and needing no full 3D loser history.
+
+Returns only ``(W, L)``; the cumulative-loser (C) sheets are derived from L on demand by the display
+layer, so no third cube is materialized.
 """
 
 import numpy as np
@@ -21,73 +27,79 @@ from utils.display import run_sheet_session
 
 
 @njit
-def compute_sheets(max_size):
-    """Compute the W, L, and cumulative-L sheets for Restricted 3-heap Wythoff up to ``max_size``.
+def compute_sheets(depth, size):
+    """Compute the W and L sheets for Restricted 3-heap Wythoff.
 
-    Sheets are indexed ``[x, z, y]`` so that a fixed x yields a 2D grid with z as the row and y as
-    the column, matching the rest of the codebase.
+    Covers x-levels ``0..depth-1`` over a ``size x size`` (z, y) grid. Sheets are indexed
+    ``[x, z, y]`` so that a fixed x yields a 2D grid with z as the row and y as the column, matching
+    the rest of the codebase. Depth and grid size are decoupled, so a low-level request on a big grid
+    only allocates the levels it needs.
 
     Args:
-        max_size: Number of levels/cells to compute along each axis.
+        depth: Number of x-levels to compute (cube depth).
+        size: Number of cells along each of the y and z axes (grid size).
 
     Returns:
-        W: 3D boolean array of Instant-Winner positions.
-        L: 3D boolean array of Loser (P-)positions.
-        Lcum: 3D boolean array where Lcum[x] is the OR of L_0..L_x (every loser so far).
+        W: 3D boolean array of Instant-Winner positions, shape ``(depth, size, size)``.
+        L: 3D boolean array of Loser (P-)positions, shape ``(depth, size, size)``.
     """
 
-    L = np.zeros((max_size, max_size, max_size), dtype=np.bool_)
-    W = np.zeros((max_size, max_size, max_size), dtype=np.bool_)
-    Lcum = np.zeros((max_size, max_size, max_size), dtype=np.bool_)
+    L = np.zeros((depth, size, size), dtype=np.bool_)
+    W = np.zeros((depth, size, size), dtype=np.bool_)
 
     # Running OR of every L-sheet strictly below the current level. Handles the unrestricted
     # single-pile move (x-t, y, z): any lower x-level loser at the same (y, z) makes us a winner.
-    cumL = np.zeros((max_size, max_size), dtype=np.bool_)
+    cumL = np.zeros((size, size), dtype=np.bool_)
 
-    for x in range(max_size):
+    # Most-recent sheet x' that holds a loser on each diagonal (-1 = none yet):
+    #   last_xy[(x-y)+size, z] -- for the (x-t, y-t, z) move (x and y drop together; row z fixed)
+    #   last_xz[(x-z)+size, y] -- for the (x-t, y, z-t) move (x and z drop together; col y fixed)
+    # The diagonal index encodes x-y (resp. x-z); offset by ``size`` keeps it non-negative (x-y can
+    # be as low as -(size-1)) and at most depth+size-1, so depth+size rows suffice. The loser's own
+    # row/col indexes the second axis.
+    last_xy = np.full((depth + size, size), -1, dtype=np.int64)
+    last_xz = np.full((depth + size, size), -1, dtype=np.int64)
+
+    for x in range(depth):
         Wx = W[x]
 
         # -----------------------------------------------------------------
         # STEP 1: Look-back for the x-reducing moves (build W_x)
         # -----------------------------------------------------------------
-        for z in range(max_size):
-            for y in range(max_size):
+        for z in range(size):
+            for y in range(size):
                 # Single-pile move on x: any lower L at the same (y, z).
                 if cumL[z, y]:
                     Wx[z, y] = True
                     continue
 
-                # The two-pile moves that touch x are both bounded by t <= min(x, y, z):
-                #   - t <= x and t <= y for non-negativity of the two reduced piles
-                #   - t <= (third, untouched pile) for the game restriction
-                t_max = x
-                if y < t_max:
-                    t_max = y
-                if z < t_max:
-                    t_max = z
+                # (x-t, y-t, z), bounded by the untouched pile z (t <= z), i.e. the loser must sit
+                # within z steps back on this (x,y)-diagonal: x' = x - t >= x - z. The other bounds
+                # (t <= x, t <= y) hold automatically -- a stored loser has x' >= 0 and y' >= 0.
+                lxy = last_xy[(x - y) + size, z]
+                if lxy >= 0 and lxy >= x - z:
+                    Wx[z, y] = True
+                    continue
 
-                found = False
-                for t in range(1, t_max + 1):
-                    # (x-t, y-t, z): remove t from x and y, untouched pile z (restriction t <= z)
-                    if L[x - t, z, y - t]:
-                        found = True
-                        break
-                    # (x-t, y, z-t): remove t from x and z, untouched pile y (restriction t <= y)
-                    if L[x - t, z - t, y]:
-                        found = True
-                        break
-
-                if found:
+                # (x-t, y, z-t), bounded by the untouched pile y (t <= y): x' >= x - y.
+                lxz = last_xz[(x - z) + size, y]
+                if lxz >= 0 and lxz >= x - y:
                     Wx[z, y] = True
 
         # -----------------------------------------------------------------
         # STEP 2: Supermex for the moves that keep x fixed (build L_x)
         # -----------------------------------------------------------------
         L[x] = supermex(Wx, x)
-        cumL = cumL | L[x]            # now the OR of L_0..L_x
-        Lcum[x] = cumL
 
-    return W, L, Lcum
+        # Fold sheet x's losers into the rolling structures for the higher x-levels.
+        for z in range(size):
+            for y in range(size):
+                if L[x, z, y]:
+                    cumL[z, y] = True
+                    last_xy[(x - y) + size, z] = x
+                    last_xz[(x - z) + size, y] = x
+
+    return W, L
 
 
 @njit

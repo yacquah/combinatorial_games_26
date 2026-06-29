@@ -28,32 +28,33 @@ from utils.display import run_sheet_session
 
 
 @njit
-def compute_sheets(N):
-    """Compute the W, L, and cumulative-L sheets over the cube ``[0, N)^3``.
+def compute_sheets(depth, size):
+    """Compute the W and L sheets over x-levels ``0..depth-1`` on a ``size x size`` (y, z) grid.
 
-    Sheets are indexed ``[x, y, z]`` (row = y, column = z).
+    Sheets are indexed ``[x, y, z]`` (row = y, column = z). Depth (x-levels) and grid size are
+    decoupled, so a low-level request on a big grid only allocates the levels it needs.
+
+    Returns just ``(W, L)`` -- two ``(depth, size, size)`` cubes; the cumulative-loser (C) sheets are
+    derived from L on demand by the display layer (OR of L_0..L_level), so no third cube is stored.
 
     Returns:
         W: 3D boolean array of instant-winner positions (Pile X move to a lower loser).
         L: 3D boolean array of Loser (P-)positions.
-        Lcum: 3D boolean array where Lcum[x] is the OR of L_0..L_x (every loser so far).
     """
 
-    L = np.zeros((N, N, N), dtype=np.bool_)
-    W = np.zeros((N, N, N), dtype=np.bool_)
-    Lcum = np.zeros((N, N, N), dtype=np.bool_)
+    L = np.zeros((depth, size, size), dtype=np.bool_)
+    W = np.zeros((depth, size, size), dtype=np.bool_)
 
     # Running OR of every completed lower L-sheet at each (y, z). This is exactly the set of
     # instant winners for the next level, since the Pile X move is unrestricted in t.
-    cumX = np.zeros((N, N), dtype=np.bool_)
+    cumX = np.zeros((size, size), dtype=np.bool_)
 
-    for x in range(N):
+    for x in range(depth):
         W[x, :, :] = cumX                 # W_0 is blank; thereafter it is the lower-loser projection
         L[x, :, :] = supermex(W[x], x)
         cumX = cumX | L[x]                # now the OR of L_0..L_x
-        Lcum[x, :, :] = cumX
 
-    return W, L, Lcum
+    return W, L
 
 
 @njit

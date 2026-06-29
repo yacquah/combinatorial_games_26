@@ -10,38 +10,39 @@ from utils.display import run_sheet_session
 
 
 @njit
-def compute_sheets(n):
-    """Build the W, L, and cumulative-L sheets for x-levels 0..n-1.
+def compute_sheets(depth, size):
+    """Build the W and L sheets for x-levels ``0..depth-1`` on a ``size x size`` (z, y) grid.
 
     Sheets are indexed ``[x, z, y]`` (z is the row, y is the column). The instant-winner
     sheet W_x is the union of four accumulators that fold in every lower loser sheet:
         Ax (x-k, y, z), Bx (x-k, y-k, z), Cx (x-k, y, z-k), Dx (x-k, y-k, z-k),
     shifted along y, z, and the y=z diagonal respectively. L_x = supermex(W_x).
 
+    Depth (x-levels) and grid size are decoupled, so a low-level request on a big grid only allocates
+    the levels it needs. Returns just ``(W_space, L_space)`` -- two ``(depth, size, size)`` cubes; the
+    cumulative-loser (C) sheets are derived from L on demand by the display layer, so no third cube is
+    materialized.
+
     Returns:
-        W_space, L_space, Lcum_space (Lcum_space[x] is the OR of L_0..L_x).
+        W_space, L_space.
     """
 
-    W_space = np.zeros((n, n, n), dtype=np.bool_)
-    L_space = np.zeros((n, n, n), dtype=np.bool_)
-    Lcum_space = np.zeros((n, n, n), dtype=np.bool_)
+    W_space = np.zeros((depth, size, size), dtype=np.bool_)
+    L_space = np.zeros((depth, size, size), dtype=np.bool_)
 
     # Ax = x reduction, Bx = x,y reduction, Cx = x,z reduction, Dx = x,y,z reduction.
-    Ax = np.zeros((n, n), dtype=np.bool_)
-    Bx = np.zeros((n, n), dtype=np.bool_)
-    Cx = np.zeros((n, n), dtype=np.bool_)
-    Dx = np.zeros((n, n), dtype=np.bool_)
-    Lcum = np.zeros((n, n), dtype=np.bool_)
+    Ax = np.zeros((size, size), dtype=np.bool_)
+    Bx = np.zeros((size, size), dtype=np.bool_)
+    Cx = np.zeros((size, size), dtype=np.bool_)
+    Dx = np.zeros((size, size), dtype=np.bool_)
 
-    for x in range(n):
+    for x in range(depth):
         # Instant winners pointing to a lower x-level (W_0 is blank).
         Wx = Ax | Bx | Cx | Dx
         Lx = supermex(Wx)
 
         W_space[x, :, :] = Wx
         L_space[x, :, :] = Lx
-        Lcum = Lcum | Lx
-        Lcum_space[x, :, :] = Lcum
 
         # Accumulate and shift for the next level.
         Ax = Ax | Lx
@@ -49,7 +50,7 @@ def compute_sheets(n):
         Cx = shift_z(Cx | Lx)
         Dx = shift_yz(Dx | Lx)
 
-    return W_space, L_space, Lcum_space
+    return W_space, L_space
 
 
 @njit

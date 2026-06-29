@@ -28,33 +28,37 @@ from utils.display import run_sheet_session
 
 
 @njit
-def compute_sheets(N):
-    """Compute the Winner, Loser, and cumulative-Loser sheets for Tax Nim over ``[0, N)^3``.
+def compute_sheets(depth, size):
+    """Compute the Winner and Loser sheets for Tax Nim over x-levels ``0..depth-1``.
 
-    Sheets are indexed ``[x, y, z]``. For a fixed x the rendered grid uses y as the row and z as the
-    column. The game is symmetric in y and z, so the orientation is immaterial.
+    Sheets are indexed ``[x, y, z]`` over a ``size x size`` (y, z) grid. For a fixed x the rendered
+    grid uses y as the row and z as the column. The game is symmetric in y and z, so the orientation
+    is immaterial. Depth (x-levels) and grid size are decoupled, so a low-level request on a big grid
+    only allocates the levels it needs.
+
+    Returns just ``(W, L)`` -- two ``(depth, size, size)`` cubes; the cumulative-loser (C) sheets are
+    derived from L on demand by the display layer (OR of L_0..L_level), so no third cube is stored.
 
     Args:
-        N: Number of cells to compute along each axis.
+        depth: Number of x-levels to compute (cube depth).
+        size: Number of cells along each of the y and z axes (grid size).
 
     Returns:
         W: 3D boolean array of Winner (N-)positions.
         L: 3D boolean array of Loser (P-)positions.
-        Lcum: 3D boolean array where Lcum[x] is the OR of L_0..L_x (every loser so far).
     """
 
-    L = np.zeros((N, N, N), dtype=np.bool_)
-    Lcum_space = np.zeros((N, N, N), dtype=np.bool_)
+    L = np.zeros((depth, size, size), dtype=np.bool_)
 
     # Prefix-OR accumulators describing the already-completed levels (see module docstring).
-    cumX = np.zeros((N, N), dtype=np.bool_)  # OR of L over all x' < current level
-    preY = np.zeros((N, N), dtype=np.bool_)  # prefix along y of the previous (x-1) level
-    preZ = np.zeros((N, N), dtype=np.bool_)  # prefix along z of the previous (x-1) level
+    cumX = np.zeros((size, size), dtype=np.bool_)  # OR of L over all x' < current level
+    preY = np.zeros((size, size), dtype=np.bool_)  # prefix along y of the previous (x-1) level
+    preZ = np.zeros((size, size), dtype=np.bool_)  # prefix along z of the previous (x-1) level
 
-    for x in range(N):
-        for y in range(N):
+    for x in range(depth):
+        for y in range(size):
             yp = y - 1 if y > 0 else 0          # max(0, y - 1): taxed y
-            for z in range(N):
+            for z in range(size):
                 zp = z - 1 if z > 0 else 0      # max(0, z - 1): taxed z
 
                 winner = False
@@ -91,26 +95,23 @@ def compute_sheets(N):
                     L[x, y, z] = True
 
         # Roll the accumulators forward to include the level we just finished.
-        for y in range(N):
-            for z in range(N):
+        for y in range(size):
+            for z in range(size):
                 cumX[y, z] = cumX[y, z] or L[x, y, z]
 
-        # cumX now equals the OR of L_0..L_x, i.e. the cumulative-loser sheet for level x.
-        Lcum_space[x, :, :] = cumX
-
-        for y in range(N):
-            for z in range(N):
+        for y in range(size):
+            for z in range(size):
                 prev = preY[y - 1, z] if y > 0 else False
                 preY[y, z] = L[x, y, z] or prev
 
-        for y in range(N):
-            for z in range(N):
+        for y in range(size):
+            for z in range(size):
                 prev = preZ[y, z - 1] if z > 0 else False
                 preZ[y, z] = L[x, y, z] or prev
 
     # Every position is either a Winner or a Loser under normal play.
     W = ~L
-    return W, L, Lcum_space
+    return W, L
 
 
 def main():
