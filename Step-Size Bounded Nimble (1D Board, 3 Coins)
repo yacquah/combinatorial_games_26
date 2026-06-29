@@ -1,0 +1,5 @@
+In standard Nimble, you move coins to the left but cannot jump. 
+Our variant bounds the distance a coin can travel, mimicking a "bounded subtraction" game.
+RULES: Play with 3 coins on a 1D strip. No jumping is allowed. 
+On your turn, you can move a coin to the left, but it can travel a maximum of k square 
+  eg: set k = 3 or k = 4 in your code
