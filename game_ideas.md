@@ -186,10 +186,10 @@ You can remove any amount from Pile X.\
 $(x,y,z) \rightarrow (x-t,y,z)$
 
 You can remove chips from Pile Y, but the amount you remove cannot exceed the current size of Pile X.\
-$(x,y,z) \rightarrow (x,y-t,z)$ where $t<x$
+$(x,y,z) \rightarrow (x,y-t,z)$ where $t\le x$
 
 You can remove chips from Pile Z, but the amount you remove cannot exceed the current size of Pile Y.\
-$(x,y,z) \rightarrow (x,y,z-t)$ where $t<y$
+$(x,y,z) \rightarrow (x,y,z-t)$ where $t\le y$
 
 ### 3-Heap Bounded Wythoff's Game
 Normal Nim but you can remove any number of chips from two piles, as long as the ratio of the chips is between 1:2 and 2:1.\

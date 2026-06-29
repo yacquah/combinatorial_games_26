@@ -6,65 +6,50 @@ three piles at once.
 
 import numpy as np
 from numba import njit
-from utils.display import output
-
-def main():
-    """Prompt for a Wythoff sheet request, compute it, and display the result."""
-
-    grid_size = int(input("Size of the grid you want to see:\n"))
-    is_winner = input("Winner or loser? (W/L)\n") == 'W'
-    desired_level = int(input("x-level?\n"))
-
-    # Initialize Ax, Bx, Cx, and Dx as all 0s.
-    # Ax = x reduction, Bx = x,y reduction, Cx = x,z reduction, Dx = x,y,z reduction
-    Ax = np.zeros((grid_size, grid_size), dtype=np.bool_)
-    Bx = np.zeros((grid_size, grid_size), dtype=np.bool_)
-    Cx = np.zeros((grid_size, grid_size), dtype=np.bool_)
-    Dx = np.zeros((grid_size, grid_size), dtype=np.bool_)
-
-    Wx = generate_Wx(Ax, Bx, Cx, Dx, desired_level)
-
-    if is_winner:
-        final_Wx = Wx[:grid_size, :grid_size]
-        output(final_Wx, True, desired_level)
-    else:
-        Lx = supermex(Wx)
-        final_Lx = Lx[:grid_size, :grid_size]
-        output(final_Lx, False, desired_level)
+from utils.display import run_sheet_session
 
 
 @njit
-def generate_Wx(Ax, Bx, Cx, Dx, desired_level):
-    """Iteratively build the instant-winner sheet W_x up to ``desired_level``.
+def compute_sheets(n):
+    """Build the W, L, and cumulative-L sheets for x-levels 0..n-1.
 
-    Args:
-        Ax: Auxiliary sheet for (x-k, y, z) moves.
-        Bx: Auxiliary sheet for (x-k, y-k, z) moves.
-        Cx: Auxiliary sheet for (x-k, y, z-k) moves.
-        Dx: Auxiliary sheet for (x-k, y-k, z-k) moves.
-        desired_level: Target x-level to compute.
+    Sheets are indexed ``[x, z, y]`` (z is the row, y is the column). The instant-winner
+    sheet W_x is the union of four accumulators that fold in every lower loser sheet:
+        Ax (x-k, y, z), Bx (x-k, y-k, z), Cx (x-k, y, z-k), Dx (x-k, y-k, z-k),
+    shifted along y, z, and the y=z diagonal respectively. L_x = supermex(W_x).
 
     Returns:
-        The updated boolean grid for W_desired_level.
+        W_space, L_space, Lcum_space (Lcum_space[x] is the OR of L_0..L_x).
     """
 
-    if desired_level == 0:
-        return Ax | Bx | Cx | Dx
+    W_space = np.zeros((n, n, n), dtype=np.bool_)
+    L_space = np.zeros((n, n, n), dtype=np.bool_)
+    Lcum_space = np.zeros((n, n, n), dtype=np.bool_)
 
-    for _ in range(1, desired_level + 1):
-        # Current instant winners pointing to a lower x-level
-        current_sheet = Ax | Bx | Cx | Dx
+    # Ax = x reduction, Bx = x,y reduction, Cx = x,z reduction, Dx = x,y,z reduction.
+    Ax = np.zeros((n, n), dtype=np.bool_)
+    Bx = np.zeros((n, n), dtype=np.bool_)
+    Cx = np.zeros((n, n), dtype=np.bool_)
+    Dx = np.zeros((n, n), dtype=np.bool_)
+    Lcum = np.zeros((n, n), dtype=np.bool_)
 
-        # Calculate the actual Loser sheet for the current level
-        MWx = supermex(current_sheet)
+    for x in range(n):
+        # Instant winners pointing to a lower x-level (W_0 is blank).
+        Wx = Ax | Bx | Cx | Dx
+        Lx = supermex(Wx)
 
-        # Accumulate and shift for the next level
-        Ax |= MWx
-        Bx = shift_y(Bx | MWx)
-        Cx = shift_z(Cx | MWx)
-        Dx = shift_yz(Dx | MWx)
+        W_space[x, :, :] = Wx
+        L_space[x, :, :] = Lx
+        Lcum = Lcum | Lx
+        Lcum_space[x, :, :] = Lcum
 
-    return Ax | Bx | Cx | Dx
+        # Accumulate and shift for the next level.
+        Ax = Ax | Lx
+        Bx = shift_y(Bx | Lx)
+        Cx = shift_z(Cx | Lx)
+        Dx = shift_yz(Dx | Lx)
+
+    return W_space, L_space, Lcum_space
 
 
 @njit
@@ -140,6 +125,13 @@ def shift_yz(input_sheet):
     # Drops the last row and column, pastes starting at row 1, col 1
     Tx[1:, 1:] = input_sheet[:-1, :-1]
     return Tx
+
+
+def main():
+    """Prompt for one or more Wythoff Combined sheets and display them together."""
+    # Sheets are indexed [x, z, y], so the (row, col) axes are (z, y): row_is_z=True.
+    run_sheet_session(compute_sheets, row_is_z=True)
+
 
 #---------------------------- Running Main Function ----------------------------
 if __name__ == "__main__":
