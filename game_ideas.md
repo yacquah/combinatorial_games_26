@@ -44,11 +44,11 @@ Start with a three-row position represented by:
 
 $(x,y,z)$
 
-where $x \ge y \ge z$ if using row lengths, or use the column-height encoding from the paper.
-A move is like Chomp: choose a square and remove all squares weakly below/right of it.
+using the column-height encoding from the paper/code: $x$ columns of height 3, followed by $y$ columns of height 2, followed by $z$ columns of height 1.
+A move is like Chomp: choose a non-poison square and remove all squares weakly above/right of it. The poisonous square is the lower-left square, and taking it loses immediately.
 
 *Restriction:*
-A player may not choose a square on the main diagonal, unless it is the only legal move remaining.
+A player may choose a square on the main diagonal only if that move removes exactly that diagonal square and no other square. In other words, a diagonal square can be chosen only when there is nothing above it or to its right in the region that would be chomped.
 
 
 ### 3 Heap Subtract a Prime

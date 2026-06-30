@@ -10,8 +10,8 @@ corner. The poisoned square is row 1, column 1; choosing it loses immediately,
 so it is not counted as a legal move to another normal-play position.
 
 The protected-diagonal restriction is:
-    A player may not choose a square on the main diagonal unless no non-diagonal
-    square is available.
+    A player may choose a non-poison square on the main diagonal only when that
+    Chomp move removes exactly that diagonal square and no other square.
 
 The computation is a direct dynamic program over column-count positions. Sheets
 are indexed ``[x, z, y]`` so a fixed x-level displays z as rows and y as columns.
@@ -77,11 +77,9 @@ def _compute_sheets(max_depth, grid_size):
 def has_move_to_loser(x, y, z, L):
     """Return True iff ``(x, y, z)`` has a legal move to a known loser."""
 
-    non_diagonal_available = has_non_diagonal_square(x, y, z)
-
     # Bite a height-3 square: columns c..x drop from height 3 to height 2.
     for c in range(1, x + 1):
-        if not move_allowed(3, c, non_diagonal_available):
+        if not move_allowed(x, y, z, 3, c):
             continue
 
         nx = c - 1
@@ -95,7 +93,7 @@ def has_move_to_loser(x, y, z, L):
     # height-3 and height-2 columns become height 1. If it is in a height-2
     # column, the later height-2 columns become height 1.
     for c in range(1, x + y + 1):
-        if not move_allowed(2, c, non_diagonal_available):
+        if not move_allowed(x, y, z, 2, c):
             continue
 
         if c <= x:
@@ -113,7 +111,7 @@ def has_move_to_loser(x, y, z, L):
     # Bite a height-1 square. Column 1 is the poisoned square; choosing it is an
     # immediate loss, so it is never a winning move to another position.
     for c in range(2, x + y + z + 1):
-        if not move_allowed(1, c, non_diagonal_available):
+        if not move_allowed(x, y, z, 1, c):
             continue
 
         if c <= x:
@@ -136,33 +134,40 @@ def has_move_to_loser(x, y, z, L):
 
 
 @njit
-def move_allowed(row, column, non_diagonal_available):
+def move_allowed(x, y, z, row, column):
     """Return True iff the selected square is allowed by the diagonal rule."""
 
-    is_diagonal = row == column
-    return (not is_diagonal and non_diagonal_available) or (
-        is_diagonal and not non_diagonal_available
-    )
+    if row != column:
+        return True
+
+    return chomp_removes_one_cell(x, y, z, row, column)
 
 
 @njit
-def has_non_diagonal_square(x, y, z):
-    """Return True iff the position contains a non-poison off-diagonal square."""
+def chomp_removes_one_cell(x, y, z, row, column):
+    """Return True iff biting ``(row, column)`` removes exactly one square."""
 
+    removed = 0
     total = x + y + z
+    for c in range(column, total + 1):
+        height = column_height(x, y, c)
+        if height >= row:
+            removed += height - row + 1
+            if removed > 1:
+                return False
 
-    for c in range(1, x + 1):
-        if c != 3:
-            return True
+    return removed == 1
 
-    for c in range(1, x + y + 1):
-        if c != 2:
-            return True
 
-    for c in range(2, total + 1):
-        return True
+@njit
+def column_height(x, y, column):
+    """Return the height of ``column`` in old Chomp column-count encoding."""
 
-    return False
+    if column <= x:
+        return 3
+    if column <= x + y:
+        return 2
+    return 1
 
 
 def main():
