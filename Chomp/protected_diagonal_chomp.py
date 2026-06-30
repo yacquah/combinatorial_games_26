@@ -1,14 +1,19 @@
 """Generate sheets for three-row Chomp with protected diagonal moves.
 
-Positions are represented by row lengths ``(x, y, z)`` with ``x >= y >= z >= 0``.
-A move chooses an occupied square and removes every square weakly below and to
-the right, as in Chomp.
+Positions use the column-height encoding from the original Chomp scripts:
+``(x, y, z)`` means ``x`` columns of height 3, then ``y`` columns of height 2,
+then ``z`` columns of height 1.
+
+A move chooses a non-poison occupied square and removes every square weakly
+above and to the right, as in Chomp with the poisoned square at the lower-left
+corner. The poisoned square is row 1, column 1; choosing it loses immediately,
+so it is not counted as a legal move to another normal-play position.
 
 The protected-diagonal restriction is:
     A player may not choose a square on the main diagonal unless no non-diagonal
     square is available.
 
-The computation is a direct dynamic program over row-length positions. Sheets
+The computation is a direct dynamic program over column-count positions. Sheets
 are indexed ``[x, z, y]`` so a fixed x-level displays z as rows and y as columns.
 """
 
@@ -40,18 +45,23 @@ def compute_sheets(max_depth, grid_size=None):
 def _compute_sheets(max_depth, grid_size):
     """Numba-compiled implementation for ``compute_sheets``."""
 
-    W = np.zeros((max_depth, grid_size, grid_size), dtype=np.bool_)
-    L = np.zeros((max_depth, grid_size, grid_size), dtype=np.bool_)
-    Lcum = np.zeros((max_depth, grid_size, grid_size), dtype=np.bool_)
-    cumL = np.zeros((grid_size, grid_size), dtype=np.bool_)
+    # A move from a displayed position can convert taller columns into many
+    # height-1 or height-2 columns. This internal padding keeps those reachable
+    # target positions inside the computed space.
+    row_bound = max_depth + 2 * grid_size
+    internal_grid = row_bound + 1
+
+    W = np.zeros((max_depth, internal_grid, internal_grid), dtype=np.bool_)
+    L = np.zeros((max_depth, internal_grid, internal_grid), dtype=np.bool_)
+    Lcum = np.zeros((max_depth, internal_grid, internal_grid), dtype=np.bool_)
+    cumL = np.zeros((internal_grid, internal_grid), dtype=np.bool_)
 
     for x in range(max_depth):
-        y_stop = x + 1
-        if y_stop > grid_size:
-            y_stop = grid_size
+        for y in range(internal_grid):
+            for z in range(internal_grid):
+                if x + y + z > row_bound:
+                    continue
 
-        for y in range(y_stop):
-            for z in range(y + 1):
                 if has_move_to_loser(x, y, z, L):
                     W[x, z, y] = True
                 else:
@@ -69,70 +79,96 @@ def has_move_to_loser(x, y, z, L):
 
     non_diagonal_available = has_non_diagonal_square(x, y, z)
 
-    # Bite row 1, column c:
-    # (x, y, z) -> (c - 1, min(y, c - 1), min(z, c - 1))
+    # Bite a height-3 square: columns c..x drop from height 3 to height 2.
     for c in range(1, x + 1):
-        if non_diagonal_available and c == 1:
-            continue
-        if not non_diagonal_available and c != 1:
+        if not move_allowed(3, c, non_diagonal_available):
             continue
 
         nx = c - 1
-        ny = y
-        if ny > nx:
-            ny = nx
+        ny = y + x - c + 1
         nz = z
-        if nz > nx:
-            nz = nx
 
         if L[nx, nz, ny]:
             return True
 
-    # Bite row 2, column c:
-    # (x, y, z) -> (x, c - 1, min(z, c - 1))
-    for c in range(1, y + 1):
-        if non_diagonal_available and c == 2:
-            continue
-        if not non_diagonal_available and c != 2:
+    # Bite a height-2 square. If it is in a height-3 column, all affected
+    # height-3 and height-2 columns become height 1. If it is in a height-2
+    # column, the later height-2 columns become height 1.
+    for c in range(1, x + y + 1):
+        if not move_allowed(2, c, non_diagonal_available):
             continue
 
-        ny = c - 1
-        nz = z
-        if nz > ny:
-            nz = ny
+        if c <= x:
+            nx = c - 1
+            ny = 0
+            nz = z + y + x - c + 1
+        else:
+            nx = x
+            ny = c - x - 1
+            nz = z + x + y - c + 1
 
-        if L[x, nz, ny]:
+        if L[nx, nz, ny]:
             return True
 
-    # Bite row 3, column c:
-    # (x, y, z) -> (x, y, c - 1)
-    for c in range(1, z + 1):
-        if non_diagonal_available and c == 3:
-            continue
-        if not non_diagonal_available and c != 3:
+    # Bite a height-1 square. Column 1 is the poisoned square; choosing it is an
+    # immediate loss, so it is never a winning move to another position.
+    for c in range(2, x + y + z + 1):
+        if not move_allowed(1, c, non_diagonal_available):
             continue
 
-        nz = c - 1
+        if c <= x:
+            nx = c - 1
+            ny = 0
+            nz = 0
+        elif c <= x + y:
+            nx = x
+            ny = c - x - 1
+            nz = 0
+        else:
+            nx = x
+            ny = y
+            nz = c - x - y - 1
 
-        if L[x, nz, y]:
+        if L[nx, nz, ny]:
             return True
 
     return False
 
 
 @njit
-def has_non_diagonal_square(x, y, z):
-    """Return True iff the position contains an occupied off-diagonal square."""
+def move_allowed(row, column, non_diagonal_available):
+    """Return True iff the selected square is allowed by the diagonal rule."""
 
-    # Row 1 has an off-diagonal square as soon as column 2 exists. Any occupied
-    # square in row 2 or row 3 also forces an off-diagonal square to its left.
-    return x >= 2 or y >= 1 or z >= 1
+    is_diagonal = row == column
+    return (not is_diagonal and non_diagonal_available) or (
+        is_diagonal and not non_diagonal_available
+    )
+
+
+@njit
+def has_non_diagonal_square(x, y, z):
+    """Return True iff the position contains a non-poison off-diagonal square."""
+
+    total = x + y + z
+
+    for c in range(1, x + 1):
+        if c != 3:
+            return True
+
+    for c in range(1, x + y + 1):
+        if c != 2:
+            return True
+
+    for c in range(2, total + 1):
+        return True
+
+    return False
 
 
 def main():
     """Prompt for one or more protected-diagonal Chomp sheets."""
 
-    run_sheet_session(compute_sheets, row_is_z=True, triplet_default=lambda level: level + 1)
+    run_sheet_session(compute_sheets, row_is_z=True)
 
 
 if __name__ == "__main__":
