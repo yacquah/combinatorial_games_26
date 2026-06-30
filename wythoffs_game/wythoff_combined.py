@@ -14,7 +14,7 @@ def compute_sheets(depth, size):
     """Build the W and L sheets for x-levels ``0..depth-1`` on a ``size x size`` (z, y) grid.
 
     Sheets are indexed ``[x, z, y]`` (z is the row, y is the column). The instant-winner
-    sheet W_x is the union of four accumulators that fold in every lower loser sheet:
+    sheet W_x is the union of four auxiliary sheets that fold in every lower loser sheet:
         Ax (x-k, y, z), Bx (x-k, y-k, z), Cx (x-k, y, z-k), Dx (x-k, y-k, z-k),
     shifted along y, z, and the y=z diagonal respectively. L_x = supermex(W_x).
 

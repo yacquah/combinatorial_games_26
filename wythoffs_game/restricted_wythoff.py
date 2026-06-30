@@ -10,7 +10,7 @@ untouched pile:
                    (x,y,z) -> (x-t, y,   z-t) with t <= y
                    (x,y,z) -> (x,   y-t, z-t) with t <= x
 
-Because the two-pile bound couples all three heaps, the usual shift-accumulator recurrence does not
+Because the two-pile bound couples all three heaps, the usual shift-operator recurrence does not
 apply, so we compute the sheets directly. The two x-reducing moves slide along a diagonal (both
 ``(x-t, y-t, z)`` and ``(x-t, y, z-t)`` keep one coordinate fixed while two drop together), bounded
 by the untouched pile. Rather than scanning that whole diagonal per cell -- which made the original
@@ -40,8 +40,8 @@ def compute_sheets(depth, size):
         size: Number of cells along each of the y and z axes (grid size).
 
     Returns:
-        W: 3D boolean array of Instant-Winner positions, shape ``(depth, size, size)``.
-        L: 3D boolean array of Loser (P-)positions, shape ``(depth, size, size)``.
+        W: 3D boolean array of instant-winner positions, shape ``(depth, size, size)``.
+        L: 3D boolean array of loser positions, shape ``(depth, size, size)``.
     """
 
     L = np.zeros((depth, size, size), dtype=np.bool_)

@@ -26,37 +26,39 @@ alone miss interior points; the gap is filled by the interior vector $(1,1)$. He
 $$\text{Hilbert basis} = \{(1,1),\ (1,2),\ (2,1)\},$$
 
 and every legal offset is a non-negative integer combination of these three. So rather than scan the
-whole cone behind each cell, we push each P-position's "shadow" forward **one basis step at a time**:
-a cell is an IN-position iff a P-position, or an already-shadowed cell, sits exactly one basis vector
-behind it.
+whole cone behind each cell, each move keeps an **auxiliary sheet** that advances **one basis step at
+a time**: a cell is a winner via the move iff a loser, or a cell already marked in the auxiliary
+sheet, sits exactly one basis vector behind it.
 
 For the **X,Y move** (offset in the $x,y$ plane, $z$ fixed), reading $(\Delta x, \Delta y)$ from each
 basis vector gives:
 
 $$
 V^{xy}_x(y,z) =
-\underbrace{P_{x-1}(y-1,z)\cup V^{xy}_{x-1}(y-1,z)}_{(1,1)} \;\cup\;
-\underbrace{P_{x-1}(y-2,z)\cup V^{xy}_{x-1}(y-2,z)}_{(1,2)} \;\cup\;
-\underbrace{P_{x-2}(y-1,z)\cup V^{xy}_{x-2}(y-1,z)}_{(2,1)}.
+\underbrace{L_{x-1}(y-1,z)\cup V^{xy}_{x-1}(y-1,z)}_{(1,1)} \;\cup\;
+\underbrace{L_{x-1}(y-2,z)\cup V^{xy}_{x-1}(y-2,z)}_{(1,2)} \;\cup\;
+\underbrace{L_{x-2}(y-1,z)\cup V^{xy}_{x-2}(y-1,z)}_{(2,1)}.
 $$
 
 The deepest basis vector steps back only $2$ in $x$, so the recursion needs **just the two previous
 levels** — no 3-D prefix arrays. The X,Z move gives $V^{xz}_x$ by the same logic on the $z$ axis,
 and Nim X is the usual running union $V^1_x$. Then $W_x = V^1_x \cup V^{xy}_x \cup V^{xz}_x$.
 
-**In code:** `A_xy_p1`/`A_xy_p2` are $V^{xy}_{x-1}$/$V^{xy}_{x-2}$ (likewise `A_xz_*`); the three
-`if/elif` clauses building `xy` are the three basis terms above (reading `L[x-1]`, `L[x-2]` for the
-$P$ part and the accumulators for the $V$ part). `cumX` is $V^1$. After each sheet the accumulators
-roll forward (`A_xy_p2 = A_xy_p1`, `A_xy_p1 = A_xy_cur`).
+**In code:** sheets are indexed `[z, y]`. `aux_xy_prev1`/`aux_xy_prev2` are
+$V^{xy}_{x-1}$/$V^{xy}_{x-2}$ (likewise `aux_xz_*`); the three `if/elif` clauses building `xy` are the
+three basis terms above (reading the loser cube `L[x-1]`, `L[x-2]` for the $L$ part and the auxiliary
+sheets for the $V$ part). `cum_x` is $V^1$. After each sheet the auxiliary sheets roll forward
+(`aux_xy_prev2 = aux_xy_prev1`, `aux_xy_prev1 = aux_xy_cur`).
 
 ### Supermex operator $\mathcal{M}$ (intra-sheet)
 
 With $x$ fixed the in-sheet moves are Nim Y, Nim Z, and the bounded-ratio **Y,Z** move — the same
-cone, now in the $(y,z)$ plane. So the same three basis vectors drive an intra-sheet shadow
-accumulator $V^{yz}$, built from losers already found on this sheet. A cell is a P-position iff it is
-not in $W_x$, has no loser to its left (Nim Y) or above it (Nim Z), and is not shadowed in $V^{yz}$.
+cone, now in the $(y,z)$ plane. So the same three basis vectors drive an intra-sheet auxiliary sheet
+$V^{yz}$, built from losers already found on this sheet. A cell is a loser iff it is not in $W_x$,
+has no loser earlier in its row (Nim Y, varying $y$) or column (Nim Z, varying $z$), and is not
+marked in $V^{yz}$.
 
-**In code:** the whole thing is one fused pass. `row_has` / `colseen[z]` carry the Nim Y / Nim Z
-look-backs, `A_yz` is the intra-sheet basis accumulator, and a cell becomes a loser only when
-`inst`, `colseen[z]`, `row_has`, and `yz` are all false. Because each basis test reads one cell, the
-sheet is $O(N^2)$ and the whole game $O(N^3)$.
+**In code:** the whole thing is one fused pass. `loser_in_row` / `loser_in_col[y]` carry the Nim Y /
+Nim Z look-backs, `aux_yz` is the intra-sheet auxiliary sheet, and a cell becomes a loser only when
+`instant`, `loser_in_col[y]`, `loser_in_row`, and `yz` are all false. Because each basis test reads
+one cell, the sheet is $O(N^2)$ and the whole game $O(N^3)$.

@@ -22,34 +22,36 @@ sheet.
 ### Deriving the recursion operator $\mathcal{R}$ (inter-sheet)
 
 The Pile X move is unrestricted, so from $[x,y,z]$ you can reach $[x', y, z]$ for *every* $x' < x$
-with $(y,z)$ untouched. A single P-position at $(y,z)$ on any lower sheet therefore makes $(y,z)$ an
-IN-position on every sheet above it — the shadow projects straight up the $x$-axis with no shift.
-The operator is just the running union of all lower P-sheets:
+with $(y,z)$ untouched. A single loser at $(y,z)$ on any lower sheet therefore makes $(y,z)$ an
+instant winner on every sheet above it — each lower loser projects straight up the $x$-axis with no
+shift. The operator is just the running union of all lower loser sheets:
 
-$$W_x = \bigcup_{x'=0}^{x-1} P_{x'} \;=\; W_{x-1} \cup P_{x-1}.$$
+$$W_x = \bigcup_{x'=0}^{x-1} L_{x'} \;=\; W_{x-1} \cup L_{x-1}.$$
 
-**In code:** `cumX` is this running union. Each level does `W[x] = cumX`, then folds in the sheet's
-new losers with `cumX |= L[x]`.
+**In code:** `lower_losers` is this running union. Each level does `W[x] = lower_losers`, then folds
+in the sheet's new losers with `lower_losers |= L[x]`.
 
 ### Supermex operator $\mathcal{M}$ (intra-sheet)
 
-Inside a sheet $x$ is fixed, leaving the Pile Y and Pile Z moves. Two things make this cheap:
+Inside a sheet $x$ is fixed, leaving the Pile Y and Pile Z moves. Arrays are indexed `[z, y]`
+(z = row, y = column). Two things make this cheap:
 
-- The **Pile Y** move ($t \le \min(x,y)$) reaches losers only in the last $x$ rows of column $z$ —
-  a fixed-width window, since $x$ is constant on the sheet.
-- The **Pile Z** move ($t \le \min(y,z)$) reaches losers only in the last $y$ columns of row $y$.
+- The **Pile Y** move ($t \le \min(x,y)$) varies $y$, so it reaches losers only in the last $x$
+  columns of the current row — a fixed-width window, since $x$ is constant on the sheet.
+- The **Pile Z** move ($t \le \min(y,z)$) varies $z$, so it reaches losers only in the last $y$
+  rows of the current column.
 
 Inside a fixed-width window, only the *nearest* loser matters: if the closest one is inside the
-window, the cell is an IN-position; if not, none are. So $\mathcal{M}$ keeps just two trackers
-instead of scanning:
+window, the cell is a winner; if not, none are. So $\mathcal{M}$ keeps just two trackers instead of
+scanning:
 
-- `last_loser_y[z]` — the largest $y$ at which a loser has appeared in column $z$.
-- `last_loser_z` — the most recent loser column in the current row $y$.
+- `last_loser_z[y]` — the largest $z$ (row) at which a loser has appeared in column $y$.
+- `last_loser_y` — the most recent loser column in the current row.
 
-A cell $(y,z)$ that is not already in $W_x$ is an IN-position iff
+A cell $(y,z)$ that is not already in $W_x$ is a winner iff
 
-$$\texttt{last\_loser\_y}[z] \ge y - x \qquad\text{or}\qquad \texttt{last\_loser\_z} \ge z - y,$$
+$$\texttt{last\_loser\_y} \ge y - x \qquad\text{or}\qquad \texttt{last\_loser\_z}[y] \ge z - y,$$
 
 i.e. the nearest loser falls inside the Pile Y window (width $x$) or the Pile Z window (width $y$).
-Otherwise the cell is a new P-position; we set $L_x(y,z)=1$ and update both trackers. This resolves
-each cell in $O(1)$, for $O(N^3)$ overall.
+Otherwise the cell is a new loser; we set $L_x(y,z)=1$ and update both trackers. This resolves each
+cell in $O(1)$, for $O(N^3)$ overall.

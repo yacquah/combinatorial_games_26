@@ -17,9 +17,10 @@ while the Pile Y and Pile Z moves stay within a sheet. So:
     L_x = supermex(W_x): cells that are neither an instant winner nor able to reach an in-sheet
           loser via a Pile Y or Pile Z move.
 
-Within a sheet both intra-sheet windows have *constant* width: the Pile Y look-back spans the last
-x rows (x is fixed for the sheet) and the Pile Z look-back spans the last y columns (constant along
-a row). Tracking the most-recent loser per column / per row therefore resolves each cell in O(1).
+Sheets are indexed [x, z, y] (z = row, y = column). Within a sheet both intra-sheet windows have
+*constant* width: the Pile Y window (along the row) spans the last x columns (x is fixed for the
+sheet) and the Pile Z window (down the column) spans the last y rows. Tracking the most-recent loser
+per row / per column therefore resolves each cell in O(1).
 """
 
 import numpy as np
@@ -29,9 +30,9 @@ from utils.display import run_sheet_session
 
 @njit
 def compute_sheets(depth, size):
-    """Compute the W and L sheets over x-levels ``0..depth-1`` on a ``size x size`` (y, z) grid.
+    """Compute the W and L sheets over x-levels ``0..depth-1`` on a ``size x size`` (z, y) grid.
 
-    Sheets are indexed ``[x, y, z]`` (row = y, column = z). Depth (x-levels) and grid size are
+    Sheets are indexed ``[x, z, y]`` (row = z, column = y). Depth (x-levels) and grid size are
     decoupled, so a low-level request on a big grid only allocates the levels it needs.
 
     Returns just ``(W, L)`` -- two ``(depth, size, size)`` cubes; the cumulative-loser (C) sheets are
@@ -39,20 +40,20 @@ def compute_sheets(depth, size):
 
     Returns:
         W: 3D boolean array of instant-winner positions (Pile X move to a lower loser).
-        L: 3D boolean array of Loser (P-)positions.
+        L: 3D boolean array of loser positions.
     """
 
     L = np.zeros((depth, size, size), dtype=np.bool_)
     W = np.zeros((depth, size, size), dtype=np.bool_)
 
-    # Running OR of every completed lower L-sheet at each (y, z). This is exactly the set of
+    # Running OR of every completed lower L-sheet at each (z, y). This is exactly the set of
     # instant winners for the next level, since the Pile X move is unrestricted in t.
-    cumX = np.zeros((size, size), dtype=np.bool_)
+    lower_losers = np.zeros((size, size), dtype=np.bool_)
 
     for x in range(depth):
-        W[x, :, :] = cumX                 # W_0 is blank; thereafter it is the lower-loser projection
+        W[x, :, :] = lower_losers         # W_0 is blank; thereafter it is the lower-loser projection
         L[x, :, :] = supermex(W[x], x)
-        cumX = cumX | L[x]                # now the OR of L_0..L_x
+        lower_losers = lower_losers | L[x]   # now the OR of L_0..L_x
 
     return W, L
 
@@ -61,55 +62,56 @@ def compute_sheets(depth, size):
 def supermex(Wx, x):
     """Resolve one sheet: mark losers given the instant-winner sheet ``Wx`` and level ``x``.
 
-    A cell (y, z) is a loser unless it is an instant winner, or it can reach an in-sheet loser by
-        Pile Y: some loser at (y', z) with y - x <= y' < y      (window width x), or
-        Pile Z: some loser at (y, z') with z - y <= z' < z      (window width y).
+    Sheets are indexed [z, y] (z = row, y = column). A cell (y, z) is a loser unless it is an instant
+    winner, or it can reach an in-sheet loser by
+        Pile Y: some loser at (y', z) with y - x <= y' < y      (window width x, along the row), or
+        Pile Z: some loser at (y, z') with z - y <= z' < z      (window width y, down the column).
 
     Each window has constant width, so we only need the most-recent loser seen: the closest loser
-    below the current cell decides whether *any* loser falls inside the window.
+    behind the current cell decides whether *any* loser falls inside the window.
 
     Args:
-        Wx: Boolean instant-winner sheet for this level.
+        Wx: Boolean instant-winner sheet for this level, indexed [z, y].
         x: Current x-level, i.e. the Pile Y window width.
 
     Returns:
-        Boolean sheet of the newly selected loser positions (L_x).
+        Boolean sheet of the newly selected loser positions (L_x), indexed [z, y].
     """
 
     N = Wx.shape[0]
     L = np.zeros((N, N), dtype=np.bool_)
 
-    # For each column z, the row index of the most recent loser found above the current row.
-    last_loser_y = np.full(N, -1, dtype=np.int64)
+    # For each column y, the row index (z) of the most recent loser found above the current row.
+    last_loser_z = np.full(N, -1, dtype=np.int64)
 
-    for y in range(N):
-        last_loser_z = -1                 # most recent loser column in this row (Pile Z look-back)
-        for z in range(N):
+    for z in range(N):
+        last_loser_y = -1                 # most recent loser column in this row (Pile Y look-back)
+        for y in range(N):
             winner = False
 
-            if Wx[y, z]:                  # Pile X move to a lower-level loser
+            if Wx[z, y]:                  # Pile X move to a lower-level loser
                 winner = True
 
-            # Pile Y move: a loser within the last x rows of column z (t <= min(x, y)).
-            if not winner and last_loser_y[z] >= 0 and last_loser_y[z] >= y - x:
+            # Pile Y move: a loser within the last x columns of row z (t <= min(x, y)).
+            if not winner and last_loser_y >= 0 and last_loser_y >= y - x:
                 winner = True
 
-            # Pile Z move: a loser within the last y columns of row y (t <= min(y, z)).
-            if not winner and last_loser_z >= 0 and last_loser_z >= z - y:
+            # Pile Z move: a loser within the last y rows of column y (t <= min(y, z)).
+            if not winner and last_loser_z[y] >= 0 and last_loser_z[y] >= z - y:
                 winner = True
 
             if not winner:
-                L[y, z] = True
-                last_loser_z = z
-                last_loser_y[z] = y
+                L[z, y] = True
+                last_loser_y = y
+                last_loser_z[y] = z
 
     return L
 
 
 def main():
     """Prompt for one or more Asymmetric Bounded Nim sheets and display them together."""
-    # Sheets are indexed [x, y, z], so the (row, col) axes are (y, z): row_is_z=False.
-    run_sheet_session(compute_sheets, row_is_z=False)
+    # Sheets are indexed [x, z, y], so the (row, col) axes are (z, y): row_is_z=True.
+    run_sheet_session(compute_sheets, row_is_z=True)
 
 
 if __name__ == "__main__":

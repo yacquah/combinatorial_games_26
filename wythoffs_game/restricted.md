@@ -24,15 +24,15 @@ pile you *don't* touch.
 The $x$-lowering moves are Nim X, the X,Y move (bounded by $z$), and the X,Z move (bounded by $y$).
 
 **Why a plain shift fails.** In Combined Wythoff the X,Y move was $\mathcal{Y}(V_{x-1} \cup
-P_{x-1})$ because the move length was unbounded — every shift was legal. Here the move length is
-capped by $z$ (a *third* coordinate), so the legal shadow length changes cell by cell. A single
+L_{x-1})$ because the move length was unbounded — every shift was legal. Here the move length is
+capped by $z$ (a *third* coordinate), so the legal move length changes cell by cell. A single
 invariant shift can't express that bound, so we track positions instead of shifting them.
 
 **X,Y move** $[x-t, y-t, z]$. It drops $x$ and $y$ together, so it keeps $x-y$ constant: the source
-P-position lies on the same $(x-y)$ diagonal, on a lower sheet $x' = x-t$. The bound $t \le z$ means
-$x' \ge x - z$. So a cell is an IN-position iff *some* P-position on its $(x-y)$ diagonal sits no
-more than $z$ sheets below it. We only need the **closest** such P-position, i.e. the largest $x'$
-seen on that diagonal:
+loser lies on the same $(x-y)$ diagonal, on a lower sheet $x' = x-t$. The bound $t \le z$ means
+$x' \ge x - z$. So a cell is a winner iff *some* loser on its $(x-y)$ diagonal sits no more than $z$
+sheets below it. We only need the **closest** such loser, i.e. the largest $x'$ seen on that
+diagonal:
 
 $$\mathrm{MaxX}^{xy}(x-y,\ z) \ge x - z.$$
 
@@ -41,7 +41,7 @@ condition is
 
 $$\mathrm{MaxX}^{xz}(x-z,\ y) \ge x - y.$$
 
-**Nim X** contributes the usual running union $\bigcup_{x'<x} P_{x'}$.
+**Nim X** contributes the usual running union $\bigcup_{x'<x} L_{x'}$.
 
 A cell is in $W_x$ if Nim X fires, or either diagonal condition above holds.
 
@@ -55,8 +55,8 @@ diagonal. Building $W_x$ is three $O(1)$ tests per cell (`cumL`, `last_xy >= x -
 
 With $x$ fixed the in-sheet moves are Nim Y, Nim Z, and the Y,Z move bounded by $x$ (so $t \le x$).
 The first two block a full row and column as in plain Wythoff. The bounded Y,Z move differs from
-standard Wythoff in one way: instead of casting an *infinite* diagonal, each new P-position projects
-a diagonal segment of length exactly $x$ — positions $[y+t, z+t]$ for $t = 1 \dots x$ — because the
+standard Wythoff in one way: instead of blocking an *infinite* diagonal, each new loser blocks a
+diagonal segment of length exactly $x$ — positions $[y+t, z+t]$ for $t = 1 \dots x$ — because the
 move can remove at most $x$.
 
 **In code:** `supermex` scans each column for the first free $z$, marks the loser, blocks that row
