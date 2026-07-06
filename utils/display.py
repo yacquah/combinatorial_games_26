@@ -3,6 +3,7 @@ Visualization for combinatorial games, rendering 2D boolean sheets using Matplot
 """
 
 import math
+import os
 import re
 import matplotlib.pyplot as plt
 import numpy as np
@@ -226,7 +227,8 @@ def run_sheet_session(compute_sheets, row_is_z=True, triplet_default=None):
     each with its own type, x-level, and size, e.g. ``W8x16, L4x20, C16x32``. Types:
     W (instant winners), L (losers on that single sheet), C (cumulative losers: every
     loser up through that level). A ``T<level>`` (or ``T<level>x<size>``) token instead
-    prints all loser triplets (x, y, z) up to that level.
+    writes all loser triplets (x, y, z) up to that level to a text file (they're
+    too long to scroll back through in the terminal).
 
     Args:
         compute_sheets: Callable ``(depth, size) -> (W_space, L_space[, Lcum_space])``
@@ -247,7 +249,8 @@ def run_sheet_session(compute_sheets, row_is_z=True, triplet_default=None):
     print("Enter sheets as <W|L|C><level>x<size>, separated by commas.")
     print("  W = instant winners, L = losers on that sheet, "
           "C = cumulative losers (all losers up to that level).")
-    print("  T<level> (or T<level>x<size>) prints all loser triplets (x,y,z) up to that level.")
+    print("  T<level> (or T<level>x<size>) writes all loser triplets (x,y,z) "
+          "up to that level to a text file.")
 
     specs = []         # (type_char, level, size) for sheets to plot
     triplet_reqs = []  # (level, size_or_None) for triplet printouts
@@ -266,14 +269,19 @@ def run_sheet_session(compute_sheets, row_is_z=True, triplet_default=None):
                 f"Could not parse sheet spec '{token}' (expected e.g. W8x16, C16x32, T50)")
         specs.append((match.group(1).upper(), int(match.group(2)), int(match.group(3))))
 
-    # Print any requested triplet lists first.
+    # Write any requested triplet lists to text files (they're too long to scroll
+    # back through in the terminal).
     for level, size in triplet_reqs:
         grid = max(size or 0, triplet_default(level))
         L_space = compute_sheets(level + 1, grid)[1]
         triplets = _loser_triplets(L_space, level, row_is_z)
-        for x, y, z in triplets:
-            print(f"({x}, {y}, {z})")
-        print(f"\n{len(triplets)} losers for x = 0..{level}")
+        fname = f"losers_x0-{level}_size{grid}.txt"
+        with open(fname, 'w') as f:
+            for x, y, z in triplets:
+                f.write(f"({x}, {y}, {z})\n")
+            f.write(f"\n{len(triplets)} losers for x = 0..{level}\n")
+        print(f"Wrote {len(triplets)} losers (x = 0..{level}) to "
+              f"{os.path.abspath(fname)}")
 
     if not specs:
         return
