@@ -7,3 +7,4 @@
 .pylintrc
 .claude/
 CLAUDE.md
+.vscode/settings.json

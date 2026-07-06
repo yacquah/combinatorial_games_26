@@ -7,6 +7,61 @@ import re
 import matplotlib.pyplot as plt
 import numpy as np
 
+def _nice_step(span):
+    """Pick a 1/2/5-style step size giving roughly 8 ticks across ``span`` cells."""
+    nice_multipliers = [1, 2, 5, 10]
+    raw = max(1, span / 8)
+    mag = 10 ** int(np.log10(raw)) if raw >= 1 else 1
+    step = mag * min(nice_multipliers, key=lambda n: abs(n * mag - raw))
+    return max(int(step), 1)
+
+
+def _update_ticks(ax):
+    """Recompute ticks and gridlines for the currently visible window of ``ax``.
+
+    Runs once at creation and again on every zoom/pan (connected to the axes'
+    ``xlim_changed``/``ylim_changed`` callbacks, which pass the axes as the sole
+    argument). Tick spacing is chosen from the *visible* span, not the full grid,
+    so zooming in refines the labels (500-steps become 50-steps become 1-steps),
+    and per-cell minor gridlines appear whenever fewer than ~120 cells are visible.
+    Every tick is clamped strictly inside the current limits: ``Axis.set_ticks``
+    *expands* the view to show any out-of-range tick, which would re-fire this
+    callback and walk the view outward forever. A re-entry guard backstops that.
+    """
+    if getattr(ax, '_updating_ticks', False):
+        return
+    ax._updating_ticks = True
+    try:
+        x0, x1 = sorted(ax.get_xlim())
+        y0, y1 = sorted(ax.get_ylim())
+
+        step_x = _nice_step(x1 - x0)
+        step_y = _nice_step(y1 - y0)
+
+        # Ticks at step multiples, only within the visible window (and never below 0).
+        start_x = max(0, math.ceil(x0 / step_x)) * step_x
+        start_y = max(0, math.ceil(y0 / step_y)) * step_y
+        xt = np.arange(start_x, x1 + step_x, step_x)
+        yt = np.arange(start_y, y1 + step_y, step_y)
+        ax.set_xticks(xt[xt <= x1])
+        ax.set_yticks(yt[yt <= y1])
+
+        # Per-cell gridlines whenever the visible window is small enough to resolve them.
+        if (x1 - x0) <= 120 and (y1 - y0) <= 120:
+            mx = np.arange(math.floor(x0) - 0.5, x1 + 1, 1)
+            my = np.arange(math.floor(y0) - 0.5, y1 + 1, 1)
+            ax.set_xticks(mx[(mx >= x0) & (mx <= x1)], minor=True)
+            ax.set_yticks(my[(my >= y0) & (my <= y1)], minor=True)
+            ax.grid(which='minor', color='gray', linestyle='-', linewidth=0.5)
+            ax.tick_params(which='minor', bottom=False, left=False)
+        else:
+            ax.set_xticks([], minor=True)
+            ax.set_yticks([], minor=True)
+            ax.grid(False, which='minor')
+    finally:
+        ax._updating_ticks = False
+
+
 def output_multiple(sheets, titles, sizes=None):
     """
     Renders and displays multiple 2D grid visualizations side-by-side.
@@ -23,6 +78,18 @@ def output_multiple(sheets, titles, sizes=None):
     cols = min(num_sheets, max_cols)
     rows = math.ceil(num_sheets / cols)
 
+    # Crop every sheet up front so we know the real displayed dimensions before sizing
+    # the figure (the dpi choice below depends on the largest cropped grid).
+    cropped = []
+    for i, sheet in enumerate(sheets):
+        if sizes is not None and i < len(sizes) and sizes[i] is not None:
+            size = sizes[i]
+            if isinstance(size, int):
+                sheet = sheet[:size, :size]
+            else:
+                sheet = sheet[:size[0], :size[1]]
+        cropped.append(sheet)
+
     # Each subplot wants this many inches square, but the whole figure is capped to a
     # screen-sized budget so it never opens taller/wider than the display. Scaling both
     # dimensions by the same factor keeps the subplots square.
@@ -34,6 +101,10 @@ def output_multiple(sheets, titles, sizes=None):
 
     # constrained_layout (unlike a one-shot tight_layout) recomputes spacing on every
     # resize, so shrinking the window reflows the panels instead of overlapping them.
+    # dpi stays at 100: raising it scales fonts and window pixel size too, so it can't
+    # fix cell rendering interactively. At full zoom-out a grid with more cells than the
+    # axis has pixels cannot show every cell as a square -- zoom in (ticks refine
+    # automatically, see _update_ticks) or use save_exact for a pixel-perfect PNG.
     fig, axes = plt.subplots(
         rows, cols,
         figsize=(fig_width * scale, fig_height * scale),
@@ -43,18 +114,8 @@ def output_multiple(sheets, titles, sizes=None):
 
     # Flatten axes array so we can iterate linearly, handling single-sheet edge cases
     axes = np.atleast_1d(axes).flatten()
-        
-    for i, (ax, sheet, title) in enumerate(zip(axes[:num_sheets], sheets, titles)):
-        # Crop sheet if a specific size is requested
-        if sizes is not None and i < len(sizes) and sizes[i] is not None:
-            size = sizes[i]
-            if isinstance(size, int):
-                sheet = sheet[:size, :size]
-            else:
-                sheet = sheet[:size[0], :size[1]]
 
-        grid_rows = sheet.shape[0]  
-        grid_columns = sheet.shape[1] 
+    for i, (ax, sheet, title) in enumerate(zip(axes[:num_sheets], cropped, titles)):
         
         ax.set_title(title)
         ax.set_xlabel("y")
@@ -62,32 +123,14 @@ def output_multiple(sheets, titles, sizes=None):
         
         # Render the sheet, converting array's T/F values as 0/1, put (0,0) at the bottom left.
         # Sets minimum value as 0 (white), and maximum value as 1 (black)
-        ax.imshow(sheet.astype(np.uint8), cmap="binary", origin="lower", vmin=0, vmax=1)
+        ax.imshow(sheet.astype(np.uint8), cmap="binary", origin="lower", vmin=0, vmax=1,
+                  interpolation="nearest", aspect="equal")
         
-        # Create step sizes for ~8 tick marks by finding raw step size, using its order of magnitude
-        # to pick closest nice-looking step size to the raw step size
-        nice_multipliers = [1, 2, 5, 10]
-        
-        raw_step_x = max(1, grid_columns / 8)
-        mag_x = 10 ** int(np.log10(raw_step_x)) if raw_step_x >= 1 else 1
-        step_x = mag_x * min(nice_multipliers, key=lambda n: abs(n * mag_x - raw_step_x))
-        step_x = max(int(step_x), 1)
-        
-        raw_step_y = max(1, grid_rows / 8)
-        mag_y = 10 ** int(np.log10(raw_step_y)) if raw_step_y >= 1 else 1
-        step_y = mag_y * min(nice_multipliers, key=lambda n: abs(n * mag_y - raw_step_y))
-        step_y = max(int(step_y), 1)
-        
-        # Puts tick markers on axes
-        ax.set_xticks(np.arange(0, grid_columns, step_x))
-        ax.set_yticks(np.arange(0, grid_rows, step_y))
-        
-        # Show gridlines for smaller grids
-        if grid_columns <= 100 or grid_rows <= 100:
-            ax.set_xticks(np.arange(-0.5, grid_columns, 1), minor=True)
-            ax.set_yticks(np.arange(-0.5, grid_rows, 1), minor=True)
-            ax.grid(which='minor', color='gray', linestyle='-', linewidth=0.5)
-            ax.tick_params(which='minor', bottom=False, left=False)
+        # Ticks and gridlines follow the visible window: set them for the initial
+        # full view, then recompute on every zoom/pan so labels refine as you zoom.
+        _update_ticks(ax)
+        ax.callbacks.connect('xlim_changed', _update_ticks)
+        ax.callbacks.connect('ylim_changed', _update_ticks)
 
     # Hide any unused subplots (e.g., if we have 5 sheets in a 2x3 grid)
     for ax in axes[num_sheets:]:
@@ -259,6 +302,37 @@ def run_sheet_session(compute_sheets, row_is_z=True, triplet_default=None):
         label = "cumulative L0-" if type_char == 'C' else type_char
         titles.append(f"{label}{level} with size {size}")
     output_multiple(arrays, titles)
+
+
+def save_exact(sheet, path, cell_px=1, size=None):
+    """Write a sheet to a PNG with exactly ``cell_px`` device pixels per cell.
+
+    The interactive figures can't guarantee square cells once the grid has more cells
+    than the axis has pixels (e.g. a 4000 grid on a laptop screen): the overview is
+    downsampled, so isolated cells alias into uneven rectangles. This bypasses all axis
+    and margin resampling -- the raw boolean array is written straight to pixels, one
+    cell -> ``cell_px`` x ``cell_px`` square block -- so cells are perfectly square at
+    any grid size. There are no axes or ticks; open the PNG and zoom to inspect.
+    Black = True, and (0, 0) is the bottom-left corner (matching ``output``).
+
+    Args:
+        sheet (np.ndarray): 2D boolean/integer sheet.
+        path (str): Output PNG path.
+        cell_px (int): Device pixels per cell (1 gives a grid-sized image).
+        size (int or tuple, optional): Crop the sheet before writing.
+    """
+    if size is not None:
+        if isinstance(size, int):
+            sheet = sheet[:size, :size]
+        else:
+            sheet = sheet[:size[0], :size[1]]
+
+    img = sheet.astype(bool)
+    if cell_px > 1:
+        img = np.repeat(np.repeat(img, cell_px, axis=0), cell_px, axis=1)
+
+    # imsave puts row 0 at the top; flip so (0, 0) lands at the bottom-left.
+    plt.imsave(path, img[::-1], cmap="binary", vmin=0, vmax=1)
 
 
 def output_sheets(sheets):
