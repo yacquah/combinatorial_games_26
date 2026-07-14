@@ -1,0 +1,12 @@
+{
+  "levels": [
+    0,
+    10,
+    30
+  ],
+  "size": 12000,
+  "alpha": "auto",
+  "residual": false,
+  "fit": true,
+  "dark": false
+}

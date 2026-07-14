@@ -9,3 +9,7 @@
 CLAUDE.md
 .vscode/settings.json
 .DS_Store
+
+# Regenerable: cached loser grids and rendered plots (sessions ARE tracked)
+wythoffs_game/analysis/data/
+wythoffs_game/analysis/plots/
