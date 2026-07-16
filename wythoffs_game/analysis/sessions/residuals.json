@@ -1,0 +1,19 @@
+{
+  "levels": [
+    0,
+    1,
+    2,
+    3,
+    30,
+    50
+  ],
+  "size": 140000,
+  "alpha": null,
+  "residual": true,
+  "intercepts": false,
+  "slope": false,
+  "edge": false,
+  "lines": [],
+  "fit": true,
+  "dark": false
+}
