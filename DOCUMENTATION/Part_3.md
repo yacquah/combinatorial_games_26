@@ -156,8 +156,104 @@ And repeat until we fill the whole grid.
 
 Since losers block off the entire column and row that they are in, there is exactly one loser in each row/column. 
 
-## Overall Geometry
+## Geometry
 ![](images/0123LW.png)
 ![](images/32_64_128LW.png)
 
-We can notice that there are two 
+### First observations
+We can notice that the game is completely symmetrical across all three axes, since there is no difference between the $x,y,z$ piles. 
+
+This means that the graphs are symmetrical across the $45 \degree y/z$ diagonal (as well as $x/y$ and $x/z$ which is less visible in 2D sheets).
+
+Additionally, we spot two loser lines, which we will call the "upper loser line" and "lower loser line", with their slopes being inverses of each other. These loser lines lie on the outer boundary of the instant winner sheet geometries. There is also a region near the origin with three regions of losers. 
+As we move up in x-values, the shape of the sheets stays roughly the same, while the size just increases. 
+
+Because the game is symmetrical, we can figure out the coordinates of the losers at $y=0$ or $z=0$. When $y=0$, it is basically the two-pile game with piles $x$ and $z$. When $z=0$, it is the two-pile game with $x$ and $y$. These losers will be the same as the losers at $x=0$, which is the two-pile game with piles $y$ and $z$. 
+
+For example, from the $L_0$ sheet we can see that there are losers with $x=0$ at $(1,3),(2,6),(3,1),(4,11)\ldots$\
+This means that on $L_1$, there are losers at $(3,0)$ and $(0,3)$. On $L_2$, there are losers at $(6,0)$ and $(0,6)$. On $L_3$, there are losers at $(1,0)$ and $(0,1)$, and so on. 
+
+## Renormalization
+We would like to find values that characterize the geometry of losers. From before, we see that there are two loser lines. We can assign each line a slope and density. The upper line has slope $m_u$ and density $\lambda_u$, while the lower line has slope $m_\ell$ and density $\lambda_\ell$. Since they are mirrored across the diagonal, we can assign one y-intercept/z-intercept value that scales with x-level, $\alpha$.
+![](images/variables.png)
+
+### Equations
+First we look at four variables, $\lambda_u,\lambda_\ell,m_u,m_\ell$, and find four equations relating them to solve.
+
+We know that there is exactly one loser in any column or row, and we define density as the number of dots on a line (upper or lower) per number of columns. Therefore, the two densities must sum to 1:
+$$\boxed{\lambda_u+\lambda_\ell=1}$$
+
+Since the game is symmetric across the $45\degree$ diagonal, the two lines are reflections of each other and their slopes are inverses:
+$$\boxed{m_\ell = \frac{1}{m_u}}$$
+
+#### Relating the densities to the slopes
+
+Counting the losers along the two lines gives a relation between the densities and the slope. A horizontal stretch $d$ measured along the lower line contains $\lambda_\ell\mkern1mu d$ losers, and if we mirror this region to the upper line, the matching horizontal stretch $c$ along the upper line contains $\lambda_u\mkern1mu c$ losers. So, we have the same number of losers in $\lambda_u\mkern1mu d$ as in $\lambda_u\mkern1mu c$.
+
+![](images/equation3.png)
+
+$$\lambda_u\mkern1mu c = \lambda_\ell\mkern1mu d \qquad\Longrightarrow\qquad \frac{\lambda_u}{\lambda_\ell} = \frac{d}{c} = m_u.$$
+$$\boxed{\frac{\lambda_u}{m_u}=\lambda_\ell}$$
+
+Our fourth equation comes from looking at supermex. It comes from asking how far apart consecutive losers on the upper line have to be. We are trying to figure out how we can generalize getting from one loser to another loser on the same line (we will focus on the upper line for convenience). 
+
+When we move from a loser $(y,z)$ to an implied winner, we know that the implied winner with highest possible $z$ (that is a parent of this specific loser) is of the form $(y+\Delta y,z+2\Delta y)$. This is because if we removed $\Delta y$ chips from $y$ from a winning position, then we can remove a maximum of $2\Delta y$ from $z$. Recall the two-pile move lands anywhere in a "cone" opening to the right, bounded by slope $\tfrac{1}{2}$ below and slope $2$ above (removing chips in a $1\!:\!2$ to $2\!:\!1$ ratio). 
+
+![](images/highestwinner.png)
+
+To find the next consecutive loser on the upper line, it has to be above that cone, so at $(y+\Delta y, z + 2\Delta y+1)$. So over a run of $\Delta y$ columns, the rise in $z$ is $2\Delta y$ to reach the top loser in the column, plus one extra cell for each loser we passed along the way. *This is assuming that we do not have lower level losers that will force the next loser to increase in $z$ by 1.  If we go across $\Delta y$, then the number of upper-line losers passed would just be $\lambda_u(\Delta y)$, so:
+$$\Delta z = 2\Delta y + (\text{\# of losers passed})$$
+$$\Delta z = 2\Delta y + (\lambda_u \mkern1mu \Delta y)$$
+$$\Delta z = \Delta y(2+\lambda_u)$$
+$$\frac{\Delta z}{\Delta y} = 2+ \lambda_u$$
+$$\boxed{m_u = 2+\lambda_u}$$
+
+### Solving the equations
+To recap, we have four equations:
+$$\begin{equation}
+    \lambda_u+\lambda_\ell=1
+\end{equation}$$
+$$\begin{equation}
+    m_\ell = \frac{1}{m_u}
+\end{equation}$$
+$$\begin{equation}
+    \frac{\lambda_u}{m_u}=\lambda_\ell
+\end{equation}$$
+$$\begin{equation}
+    m_u = 2+\lambda_u
+\end{equation}$$
+
+We can substitute $(3)$ into $(1)$:
+$$\lambda_u + \frac{\lambda_u}{m_u}=1$$
+$$\lambda_u\left(1+\frac{1}{m_u}\right)=1$$
+$$\lambda_u=\frac{1}{1+\frac{1}{m_u}}$$
+$$\begin{equation}
+\lambda_u=\frac{m_u}{m_u+1}
+\end{equation}$$
+
+Then we can use this equation $(5)$ and substitute it into $(4)$:
+$$\lambda_u = \frac{m_u}{m_u + 1} \qquad\text{and}\qquad m_u = 2 + \lambda_u$$
+$$\lambda_u=\frac{2+\lambda_u}{3+\lambda_u}$$
+$$\lambda_u(3 + \lambda_u) = 2 + \lambda_u$$
+$$\lambda_u^2 + 2\lambda_u - 2 = 0$$
+
+The quadratic formula gives $\lambda_u = \dfrac{-2 \pm \sqrt{4 + 8}}{2} = -1 \pm \sqrt{3}$, and we take the positive root because density is positive:
+$$\boxed{\lambda_u = \sqrt{3} - 1} \approx 0.732$$
+Now that we have one unknown solved, we can find the rest easily:
+$$m_u = 2 + \lambda_u$$
+$$\boxed{m_u = 1 + \sqrt{3}} \approx 2.732$$
+$$m_\ell = \frac{1}{m_u}$$
+$$m_\ell = \frac{1}{1 + \sqrt{3}} $$
+$$\boxed{m_\ell = \frac{\sqrt{3} - 1}{2}} \approx 0.366$$
+$$\lambda_u+\lambda_\ell = 1$$
+$$\lambda_\ell = 1 - \lambda_u$$
+$$\lambda_\ell = 1 - \sqrt{3} - 1$$
+$$\boxed{\lambda_\ell = 2 - \sqrt{3}} \approx 0.268$$
+
+### Actual geometry
+These four values are found under the assumption that there is no "bumping up" from loser level loser sheets. That is when there is a loser position already occupied by a lower level loser. The lower level loser would be reachable through a "normal nim x" move, since simply removing chips from the $x$ pile would reach the loser. Since losers may not reach losers, the position on $L_x$ must be some sort of winner and the actual loser would have its $z$ increased by one. 
+
+When we look at the actual geometry of the sheets higher than $x=0$, we find that the lines form an asymptote. 
+
+The actual slope starts out steeper, and approaches 
+
