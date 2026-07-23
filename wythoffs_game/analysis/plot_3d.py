@@ -17,6 +17,13 @@ Reading it:
 * Drag to rotate (turntable: z stays up, so it never tumbles out of view), scroll to zoom
   toward the cursor (custom -- Plotly's own 3D scroll only zooms the fixed centre), right-drag
   to pan. To dive on the origin, point at it and scroll.
+* ORIENTATION PRESETS: the buttons at the top-left snap the camera straight down an axis, so the
+  cloud flattens to a clean plane -- ``y–z`` (down x, the plot_points sheet view), ``x–z`` (down
+  y), ``x–y`` (down z), and ``reset`` (back to the three-quarter iso view). They only move the
+  camera, so they compose with rotation, zoom, and the slider.
+* ``--slider``: show one x-level at a time under a slider (a 3D flip-book), starting looking down
+  the x-axis onto the y–z face -- drag it to step through consecutive sheets in place. Same idea
+  as ``plot_points --slider``, but you can still rotate the sheet or hit a preset.
 * Up to ~150 levels get one toggleable trace each: click a level in the legend to toggle it,
   double-click to isolate one. Past that, the whole cloud collapses into a single trace colored
   by x (a colorbar replaces the legend) -- thousands of separate traces + a giant legend make
@@ -37,8 +44,15 @@ regenerates the graph from the cache, and command-line flags override what the s
     --list             list saved sessions
     --no-open          just write the HTML, don't open it in a browser
 
+``--sorted`` draws only the sorted wedge ``y >= z >= x``: the loser set is symmetric under
+permuting the three piles, so the full cloud is six overlapping copies of one surface, and this
+keeps the single copy. That is what turns the several fans (one per choice of which pile is the
+big one) into the one fan they are all images of. The sheet coordinate stays the *smallest* pile,
+so each sheet keeps its whole far field.
+
 Usage:
     python -m wythoffs_game.analysis.plot_3d --levels 0-40 --size 8000
+    python -m wythoffs_game.analysis.plot_3d --levels 0-40 --size 8000 --sorted   # one wedge
     python -m wythoffs_game.analysis.plot_3d --levels 0,10,25,50 --size 20000 --dark
     python -m wythoffs_game.analysis.plot_3d --levels 0-100 --size 36000 --max-points 250000
     python -m wythoffs_game.analysis.plot_3d --levels 0-40 --size 8000 --stretch 2.5  # spread x
@@ -54,7 +68,7 @@ from pathlib import Path
 import numpy as np
 import plotly.graph_objects as go
 
-from .plot_points import THEME, level_color, parse_levels
+from .plot_points import SLIDER_KEYS_JS, THEME, level_color, parse_levels
 from .store import load, sheet_points
 
 HERE = Path(__file__).parent
@@ -119,23 +133,230 @@ if (gd) {
 MERGE_ABOVE = 150
 
 
+def _points(loser_y, x, wedge=False):
+    """Sheet ``x``'s losers as ``(y, z)``, optionally cut down to the sorted wedge.
+
+    ``wedge=True`` keeps only the dots with ``y >= z >= x`` -- the losers whose piles are already
+    in sorted order with the sheet coordinate as the *smallest* pile. The loser set is symmetric
+    under permuting the three piles, so every loser has exactly one arrangement satisfying that,
+    and the full cloud is six overlapping copies of this one wedge. Drawing the wedge alone
+    replaces the six fans with the single surface they are copies of.
+
+    Note which pile the sheet holds: slicing at a fixed *smallest* pile keeps each sheet's whole
+    far field (the slope-(1+sqrt3) lines run out to y ~ 50x, far above x), whereas slicing at a
+    fixed *largest* pile -- what ``wythoffs_game.sorted_wythoff`` does, because that is the order
+    its recurrence must run in -- leaves only the handful of dots with both other piles below the
+    sheet, a triangle of width x with none of the lines in it.
+    """
+    y, z = sheet_points(loser_y, x)
+    if wedge:
+        keep = (z >= x) & (y >= z)
+        y, z = y[keep], z[keep]
+    return y, z
+
+
 def _ramp_colorscale(t):
     """Plotly [pos, color] colorscale from the theme's ramp, matching ``level_color``'s gradient."""
     ramp = t["ramp"]
     return [[i / (len(ramp) - 1), c] for i, c in enumerate(ramp)]
 
 
-def build(levels, size, dark=False, max_points=150_000, stretch=1.6, title=None):
+# The three-quarter starting eye; also what the "reset" preset returns to.
+ISO_EYE = dict(x=1.7, y=1.7, z=0.9)
+
+
+def _axis_view(stretch):
+    """Camera eyes that look straight down each axis, so the cloud flattens to a clean plane.
+
+    Looking down an axis puts the other two axes in the screen plane, so you get the 2D picture
+    back with no perspective skew:
+      * down x -> the y–z face (the ``plot_points`` sheet view: y across, z up);
+      * down y -> the x–z face (levels across, z up);
+      * down z -> the x–y face (levels across, y up).
+    ``up`` is chosen perpendicular to the view direction. The down-x eye stands back by ``stretch``
+    because the x edge is that much longer; distances only set the initial framing -- zoom adjusts.
+    """
+    return {
+        "yz": dict(eye=dict(x=stretch + 1.4, y=0, z=0), up=dict(x=0, y=0, z=1)),
+        "xz": dict(eye=dict(x=0, y=2.5, z=0), up=dict(x=0, y=0, z=1)),
+        "xy": dict(eye=dict(x=0, y=0, z=2.5), up=dict(x=0, y=1, z=0)),
+        "iso": dict(eye=ISO_EYE, up=dict(x=0, y=0, z=1)),
+    }
+
+
+def _orientation_buttons(t, stretch):
+    """A row of preset buttons that snap the camera to each axis-aligned view (and back to iso).
+
+    Each button is a ``relayout`` that just moves ``scene.camera`` -- the dots never move, so the
+    presets compose with the slider and with manual rotation/zoom.
+    """
+    v = _axis_view(stretch)
+    presets = [
+        ("y–z  (down x)", v["yz"]),
+        ("x–z  (down y)", v["xz"]),
+        ("x–y  (down z)", v["xy"]),
+        ("reset", v["iso"]),
+    ]
+    buttons = [dict(method="relayout", label=label, args=[{"scene.camera": cam}])
+               for label, cam in presets]
+    # Hung from the TOP of the plotting area (yanchor="top"), not above it: anchoring to the
+    # bottom of y=1 put the row in the same margin strip as the title, which it then covered.
+    # The 3D box's top-left corner is empty, so the buttons sit clear of both title and legend.
+    return dict(type="buttons", direction="right", showactive=False,
+                x=0.0, xanchor="left", y=1.0, yanchor="top",
+                pad=dict(l=2, t=2, b=2), bgcolor=t["grid"],
+                bordercolor=t["axis"], font=dict(color=t["ink"], size=11),
+                buttons=buttons)
+
+
+def _scene(t, stretch, camera, ranges=None, cube=False):
+    """The shared 3D scene dict: boxed axes, manual aspect (x stretched), turntable drag.
+
+    ``ranges`` optionally pins each axis to a fixed ``(lo, hi)`` (keys ``x``/``y``/``z``). The
+    slider view uses this so the y and z axes hold still as you step levels -- otherwise Plotly
+    auto-ranges to the single visible sheet and the picture rescales under you, hiding exactly the
+    progression you want to watch.
+
+    ``cube`` switches to a true common scale on all three axes (``aspectmode="data"``). This is the
+    only mode in which the game's x/y/z symmetry is undistorted -- but it is only worth using on a
+    cube-shaped window (x, y, z all covering the same range), i.e. ``--levels 0-L --size L``.
+    """
+    r = ranges or {}
+    axis = dict(backgroundcolor=t["surface"], gridcolor=t["grid"], zerolinecolor=t["axis"],
+                color=t["muted"], title_font=dict(color=t["ink"], size=13))
+    scene = dict(
+        xaxis=dict(title="x  (pile 1 / level)", range=r.get("x"), **axis),
+        yaxis=dict(title="y  (pile 2)", range=r.get("y"), **axis),
+        zaxis=dict(title="z  (pile 3)", range=r.get("z"), **axis),
+        # Turntable keeps z pointing up, so dragging orbits the stack instead of tumbling it off.
+        dragmode="turntable",
+        camera=camera,
+    )
+    if cube:
+        # Equal scale on every axis: the ONLY view in which the three-pile symmetry is true to
+        # shape. Meant for a cube window (x, y, z same range); on a thin slab it makes a wafer.
+        scene["aspectmode"] = "data"
+    else:
+        # NOT "data": x spans only the chosen levels while y,z reach the thousands, so a common
+        # scale flattens the stack into a wafer. Give each axis its own edge; x gets a
+        # `stretch`-long depth edge so the levels stand apart. Slopes here are therefore not
+        # true y:z ratios -- use plot_points (2D, equal aspect) for those, or --cube.
+        scene["aspectmode"] = "manual"
+        scene["aspectratio"] = dict(x=stretch, y=1, z=1)
+    return scene
+
+
+def build_slider(levels, size, dark=False, max_points=150_000, stretch=1.6, cube=False,
+                 title=None, wedge=False):
+    """3D scatter with a slider that shows ONE x-level at a time (a flip-book across the stack).
+
+    The camera starts looking straight down the x-axis, so each level lands on the same y–z face
+    and sliding flips between consecutive sheets in place -- the ``plot_points --slider`` idea, but
+    you can still grab the cloud and rotate, or hit an orientation preset, without losing the slider.
+    A faint ghost of the WHOLE cloud stays drawn behind every step, so you can see where the active
+    sheet sits inside the full stack; and the axes are pinned to the full data extent, so y and z
+    hold still as you slide (Plotly would otherwise rescale them to the one visible sheet).
+
+    Trace 0 is the ghost (always visible); traces 1..N are the per-level sheets, only the active one
+    shown -- so even a thousand levels stay smooth (the ghost plus one small sheet at a time).
+    """
+    t = THEME[dark]
+    loser_y = load(max(levels) + 1, size)
+    rng = np.random.default_rng(0)
+    fig = go.Figure()
+
+    # Gather every level once: the full extent pins the axes, and a thinned copy is the ghost.
+    gx, gy, gz = [], [], []
+    for x in levels:
+        y, z = _points(loser_y, x, wedge)
+        gx.append(np.full(len(y), x)); gy.append(y); gz.append(z)
+    gx, gy, gz = np.concatenate(gx), np.concatenate(gy), np.concatenate(gz)
+    ranges = dict(
+        x=[min(levels) - 0.5, max(levels) + 0.5],
+        y=[0, int(gy.max()) + 1 if gy.size else size],
+        z=[0, int(gz.max()) + 1 if gz.size else size],
+    )
+
+    # The ghost: a faint copy of the whole cloud behind every sheet, so you can see where the
+    # active level sits in the stack. Kept LIGHT on purpose -- it has its own small budget (a
+    # fraction of max_points), because a big semi-transparent Scatter3d is what makes 3D drag and
+    # smear (WebGL has to depth-sort and alpha-blend every point). Colored by x via the ramp, not
+    # gray, so the level gradient itself reads through it; a modest opacity keeps the dots crisp
+    # instead of blurring into a haze the way near-zero opacity does.
+    gtot = len(gx)
+    ghost_cap = min(30_000, max_points)  # context only -- keep it small; big alpha clouds drag
+    if gtot > ghost_cap:
+        keep = rng.choice(gtot, ghost_cap, replace=False)
+        gx, gy, gz = gx[keep], gy[keep], gz[keep]
+    fig.add_trace(go.Scatter3d(
+        x=gx, y=gy, z=gz, mode="markers", name=f"all levels (ghost, {gtot:,})",
+        marker=dict(size=1.6, color=gx, colorscale=_ramp_colorscale(t), opacity=0.30,
+                    line=dict(width=0)),
+        hoverinfo="skip",
+    ))
+
+    # The active sheet is drawn in ink (black in light theme, white in dark) so it reads instantly
+    # against the colored ghost -- only one sheet shows at a time, so a single high-contrast color
+    # beats a per-level hue you'd have to look up.
+    cap = max_points  # one sheet on screen at a time, so each may use the whole budget
+    counts = []
+    for i, x in enumerate(levels):
+        y, z = _points(loser_y, x, wedge)
+        n = len(y)
+        if n > cap:
+            keep = rng.choice(n, cap, replace=False)
+            y, z = y[keep], z[keep]
+        counts.append(n)
+        fig.add_trace(go.Scatter3d(
+            x=np.full(len(y), x), y=y, z=z, mode="markers", visible=(i == 0),
+            name=f"x = {x}  ({n:,})",
+            marker=dict(size=2, color=t["ink"], line=dict(width=0)),
+            hovertemplate="(%{x}, %{y}, %{z})<extra>x = " + str(x) + "</extra>",
+        ))
+
+    steps = []
+    for i, x in enumerate(levels):
+        vis = [True] + [j == i for j in range(len(levels))]  # ghost (trace 0) always on
+        steps.append(dict(method="update", label=str(x),
+                          args=[{"visible": vis},
+                                {"title.text": title or f"Bounded Wythoff losers — sheet x = {x}"
+                                                        f"  ({counts[i]:,})"}]))
+
+    fig.update_layout(
+        title=dict(text=title or f"Bounded Wythoff losers — sheet x = {levels[0]}"
+                                 f"  ({counts[0]:,})",
+                   font=dict(color=t["ink"], size=16)),
+        paper_bgcolor=t["surface"], font=dict(color=t["muted"], size=12),
+        legend=dict(title=dict(text="x-level"), itemsizing="constant", bgcolor="rgba(0,0,0,0)"),
+        margin=dict(l=0, r=0, t=50, b=0),
+        updatemenus=[_orientation_buttons(t, stretch)],
+        sliders=[dict(active=0, currentvalue=dict(prefix="x-level = ", font=dict(color=t["ink"])),
+                      pad=dict(t=40, b=10), steps=steps,
+                      font=dict(color=t["muted"]), bgcolor=t["grid"],
+                      activebgcolor=t["axis"], bordercolor=t["axis"])],
+        # Start looking down the x-axis: the flip-book reads as a stack of y–z sheets. Pin the
+        # axes to the full data extent so y and z hold still while stepping levels.
+        scene=_scene(t, stretch, camera=_axis_view(stretch)["yz"], ranges=ranges, cube=cube),
+    )
+    return fig
+
+
+def build(levels, size, dark=False, max_points=150_000, stretch=1.6, slider=False, cube=False,
+          title=None, wedge=False):
     """Rotatable 3D scatter of losers.
 
-    Few levels (<= ``MERGE_ABOVE``): one toggleable trace per level, distinct color, in the
-    legend. Many levels: a single trace colored by x with a colorbar -- one draw call stays
-    smooth where thousands of traces + a giant legend would crawl.
+    ``slider`` hands off to :func:`build_slider` (one x-level at a time, flip-book). Otherwise:
+    few levels (<= ``MERGE_ABOVE``) get one toggleable trace per level, distinct color, in the
+    legend; many levels collapse into a single trace colored by x with a colorbar -- one draw call
+    stays smooth where thousands of traces + a giant legend would crawl.
 
     ``stretch`` is how long the x (level) edge of the box is relative to the square y-z base:
     the x data range is tiny (0..40) next to y and z (0..thousands), so drawing all three to a
     common scale would crush the stack flat. Giving x its own full edge spreads the levels out.
     """
+    if slider:
+        return build_slider(levels, size, dark=dark, max_points=max_points, stretch=stretch,
+                            cube=cube, title=title, wedge=wedge)
     t = THEME[dark]
     loser_y = load(max(levels) + 1, size)
     rng = np.random.default_rng(0)
@@ -146,7 +367,7 @@ def build(levels, size, dark=False, max_points=150_000, stretch=1.6, title=None)
         # by x. No per-level legend -- a colorbar reads the x-gradient instead.
         xs, ys, zs = [], [], []
         for x in levels:
-            y, z = sheet_points(loser_y, x)
+            y, z = _points(loser_y, x, wedge)
             xs.append(np.full(len(y), x)); ys.append(y); zs.append(z)
         xs = np.concatenate(xs); ys = np.concatenate(ys); zs = np.concatenate(zs)
         total = len(xs)
@@ -168,7 +389,7 @@ def build(levels, size, dark=False, max_points=150_000, stretch=1.6, title=None)
         cap = max(1, max_points // max(1, len(levels)))
         total = 0
         for i, x in enumerate(levels):
-            y, z = sheet_points(loser_y, x)
+            y, z = _points(loser_y, x, wedge)
             n = len(y)
             if n > cap:
                 keep = rng.choice(n, cap, replace=False)
@@ -185,29 +406,18 @@ def build(levels, size, dark=False, max_points=150_000, stretch=1.6, title=None)
         print(f"warning: {total:,} points after thinning -- rotation may stutter. Lower "
               f"--max-points, or fewer levels, will stay smooth.")
 
-    axis = dict(backgroundcolor=t["surface"], gridcolor=t["grid"], zerolinecolor=t["axis"],
-                color=t["muted"], title_font=dict(color=t["ink"], size=13))
     fig.update_layout(
-        title=dict(text=title or f"Bounded Wythoff losers in 3D — {total:,} points",
+        title=dict(text=title or (f"Bounded Wythoff losers in 3D"
+                                  f"{' — sorted wedge y ≥ z ≥ x' if wedge else ''}"
+                                  f" — {total:,} points"),
                    font=dict(color=t["ink"], size=16)),
         paper_bgcolor=t["surface"], font=dict(color=t["muted"], size=12),
         legend=dict(title=dict(text="x-level"), itemsizing="constant", bgcolor="rgba(0,0,0,0)"),
         margin=dict(l=0, r=0, t=50, b=0),
-        scene=dict(
-            xaxis=dict(title="x  (level / pile 1)", **axis),
-            yaxis=dict(title="y  (pile 2)", **axis),
-            zaxis=dict(title="z  (pile 3)", **axis),
-            # NOT aspectmode="data": x spans 0..40 while y,z reach the thousands, so a common
-            # scale flattens the stack into a wafer. Give each axis its own edge; x gets a
-            # `stretch`-long depth edge so the levels stand apart. Slopes here are therefore not
-            # true y:z ratios -- use plot_points (2D, equal aspect) for those.
-            aspectmode="manual",
-            aspectratio=dict(x=stretch, y=1, z=1),
-            # Turntable keeps z pointing up, so dragging orbits the stack instead of tumbling it
-            # off screen. A three-quarter eye shows the level separation from the first frame.
-            dragmode="turntable",
-            camera=dict(eye=dict(x=1.7, y=1.7, z=0.9)),
-        ),
+        updatemenus=[_orientation_buttons(t, stretch)],
+        # A three-quarter eye shows the level separation from the first frame; the preset buttons
+        # snap to the axis-aligned views.
+        scene=_scene(t, stretch, camera=dict(eye=ISO_EYE, up=dict(x=0, y=0, z=1)), cube=cube),
     )
     return fig
 
@@ -222,6 +432,16 @@ def main():
     p.add_argument("--stretch", type=float, default=None,
                    help="length of the x (level) edge relative to the y-z base; bigger spreads "
                         "the sheets further apart (default 1.6)")
+    p.add_argument("--slider", action="store_true",
+                   help="show one x-level at a time under a slider (a 3D flip-book), starting "
+                        "looking down the x-axis onto the y–z face. Rotate or use the presets freely.")
+    p.add_argument("--sorted", dest="wedge", action="store_true",
+                   help="draw only the sorted wedge y >= z >= x (each loser once, with the sheet "
+                        "coordinate as the smallest pile) instead of all six permuted copies -- "
+                        "the several fans collapse into the one surface they are copies of.")
+    p.add_argument("--cube", action="store_true",
+                   help="equal scale on all three axes (aspectmode=data), the only view where the "
+                        "x/y/z symmetry is undistorted. Use on a cube window: --levels 0-L --size L.")
     p.add_argument("--dark", action="store_true")
     p.add_argument("--session", help="load a saved session by name")
     p.add_argument("--save", help="save this graph as a session")
@@ -253,10 +473,15 @@ def main():
         raise SystemExit("need --levels and --size (or a --session that has them)")
     stretch = a.stretch if a.stretch is not None else s.get("stretch", 1.6)
     max_points = a.max_points if a.max_points is not None else s.get("max_points", 150_000)
+    slider = a.slider or s.get("slider", False)
+    cube = a.cube or s.get("cube", False)
     dark = a.dark or s.get("dark", False)
-    s = dict(s, levels=levels, size=size, stretch=stretch, max_points=max_points, dark=dark)
+    wedge = a.wedge or s.get("wedge", False)
+    s = dict(s, levels=levels, size=size, stretch=stretch, max_points=max_points,
+             slider=slider, cube=cube, dark=dark, wedge=wedge)
 
-    fig = build(levels, size, dark=dark, max_points=max_points, stretch=stretch)
+    fig = build(levels, size, dark=dark, max_points=max_points, stretch=stretch, slider=slider,
+                cube=cube, wedge=wedge)
 
     name = a.save or a.session or "plot_3d"
     if a.save:
@@ -267,7 +492,7 @@ def main():
     fig.write_html(out, include_plotlyjs="cdn",
                    config=dict(scrollZoom=True, displaylogo=False,
                                toImageButtonOptions=dict(format="png", scale=2)),
-                   post_script=CURSOR_ZOOM_JS)
+                   post_script=CURSOR_ZOOM_JS + SLIDER_KEYS_JS)
     print(f"wrote {out}")
     if not a.no_open:
         webbrowser.open(out.resolve().as_uri())

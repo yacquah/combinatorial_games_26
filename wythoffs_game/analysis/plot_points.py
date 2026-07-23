@@ -54,6 +54,24 @@ THE VIEWS
 Any view honours ``--dark`` (dark theme) and ``--no-open`` (just write the HTML, don't open it).
 
 ------------------------------------------------------------------------------------------------
+TWO PILES THE SAME SIZE  (``--equal``)
+------------------------------------------------------------------------------------------------
+``--equal`` re-colors the losers whose triple has two equal piles. A dot at (y, z) on sheet x is
+the triple {x, y, z}, so those are exactly the dots on the sheet's three special lines:
+
+    y = x  or  z = x     x is the repeated pile      -- the triple is (x, x, other)
+    y = z                x is the odd pile out       -- the triple is (x, other, other)
+
+A sheet carries at most three of them, which is why they are invisible without a highlight. They
+come out as big diamonds drawn on top of every level's dots, with one legend entry for the whole
+family (toggle it to show/hide them all). Bare ``--equal`` uses high-contrast ink (black on the
+light theme, white on dark); ``--equal magenta`` or ``--equal "#e34948"`` sets your own color.
+Works on the raw view and on ``--slider``, and is saved with a ``--save``d session.
+
+    python -m wythoffs_game.analysis.plot_points --levels 0-40 --size 8000 --equal
+    python -m wythoffs_game.analysis.plot_points --levels 0-400 --size 3300 --slider --equal red
+
+------------------------------------------------------------------------------------------------
 HOW THE FITTED LINE IS CHOSEN  (this is automatic; nothing is eyeballed)
 ------------------------------------------------------------------------------------------------
 The SLOPE is not fitted -- it is pinned to the theoretical value M = 1+sqrt(3) ~ 2.732. (The code
@@ -177,6 +195,41 @@ THEME = {
                axis="#8f8e86", ramp=RAMP_DARK, cat=CAT_DARK),
 }
 
+# Left/right arrow keys step the slider, so you can walk through sheets one x at a time without
+# hunting for a 3-pixel handle with the mouse (holding the key repeats). Plotly gives sliders no
+# keyboard handling of its own, and moving `sliders[0].active` does NOT re-run that step's update,
+# so this applies the step's own args and then syncs the handle. Passed to write_html as
+# post_script by every viewer that builds a slider; a no-op on figures that have none.
+SLIDER_KEYS_JS = """
+var gd = document.getElementById('{plot_id}');
+if (gd) {
+  document.addEventListener('keydown', function(e){
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') { return; }
+    var sl = (gd.layout.sliders || [])[0];
+    if (!sl || !sl.steps || !sl.steps.length) { return; }
+    var i = (sl.active || 0) + (e.key === 'ArrowRight' ? 1 : -1);
+    if (i < 0 || i > sl.steps.length - 1) { return; }
+    e.preventDefault();
+    var st = sl.steps[i];
+    Plotly.update(gd, st.args[0] || {}, st.args[1] || {}).then(function(){
+      Plotly.relayout(gd, {'sliders[0].active': i});
+    });
+  });
+}
+"""
+
+
+def equal_mask(x, y, z):
+    """Which dots on sheet ``x`` are losers whose triple has two piles the same size.
+
+    The dot at ``(y, z)`` is the triple ``{x, y, z}``, so "two piles equal" is just "the dot
+    sits on one of the sheet's three special lines": ``y = x`` or ``z = x`` (x is the repeated
+    pile, the triple is ``(x, x, other)``) or ``y = z`` (x is the odd pile out, the triple is
+    ``(x, other, other)``). A sheet carries at most three such dots, which is why they need
+    their own color to be findable at all.
+    """
+    return (y == z) | (y == x) | (z == x)
+
 
 def level_color(i, n, t):
     """Color for the i-th of n selected levels: a distinct hue if few, else a step of the ramp."""
@@ -184,6 +237,34 @@ def level_color(i, n, t):
         return t["cat"][i]
     ramp = t["ramp"]
     return ramp[round(i * (len(ramp) - 1) / (n - 1))]
+
+
+def equal_color(equal, t):
+    """Resolve ``--equal``'s value to a color: ``"auto"`` -> the theme's ink, else as given.
+
+    Ink rather than another hue on purpose. The level colors already span the categorical
+    palette (and past 8 levels the whole blue ramp), so any hue picked here would collide with
+    *some* selection; black-on-light / white-on-dark collides with none of them. Pass a color to
+    --equal to override it.
+    """
+    return t["ink"] if equal == "auto" else equal
+
+
+def equal_trace(sheet, y, z, color, t, **kw):
+    """The "two piles equal" highlight: big ringed diamonds, drawn on top of every level's dots.
+
+    ``sheet`` is the x each dot came from, carried as customdata so the hover can name the whole
+    triple. The diamond symbol and the size bump mean the family is still identifiable if the
+    color is changed to something near a level's hue -- identity never rests on hue alone.
+    """
+    return go.Scattergl(
+        x=y, y=z, mode="markers", name=f"two piles equal  ({len(y):,})",
+        marker=dict(size=10, color=color, symbol="diamond",
+                    line=dict(width=1.5, color=t["surface"])),
+        customdata=sheet,
+        hovertemplate="(%{customdata}, %{x}, %{y})<extra>two piles equal</extra>",
+        **kw,
+    )
 
 
 def parse_levels(spec):
@@ -468,7 +549,7 @@ def build_slope(levels, size, pts, t, view, title):
     return fig
 
 
-def build_slider(levels, size, pts, fits, alpha, t, view, title):
+def build_slider(levels, size, pts, fits, alpha, t, view, title, equal=None):
     """Raw z-vs-y plot with a slider that steps through one sheet at a time.
 
     Same dots and fitted lines as the raw view, but instead of stacking every selected level on
@@ -489,6 +570,7 @@ def build_slider(levels, size, pts, fits, alpha, t, view, title):
     # For each level, remember which trace indices belong to it, so a slider step can show just
     # those. Dots first, then its two fitted lines.
     owned = []
+    hi = equal_color(equal, t) if equal else None
     for i, x in enumerate(levels):
         idx = []
         color = level_color(i, len(levels), t)
@@ -499,6 +581,11 @@ def build_slider(levels, size, pts, fits, alpha, t, view, title):
             marker=dict(size=5, color=color, line=dict(width=0)),
             hovertemplate="(%{x}, %{y})<extra>x = " + str(x) + "</extra>",
         ))
+        if hi:
+            m = equal_mask(x, y, z)
+            idx.append(len(fig.data))
+            fig.add_trace(equal_trace(np.full(int(m.sum()), x), y[m], z[m], hi, t,
+                                      visible=(i == 0)))
         if x in fits:
             c_fit, emp, _core = fits[x]
             c = c_fit if alpha is None else alpha * x
@@ -548,12 +635,13 @@ def build_slider(levels, size, pts, fits, alpha, t, view, title):
 
 
 def build(levels, size, dark=False, fit=False, alpha=None, residual=False, intercepts=False,
-          slope=False, edge=False, slider=False, lines=(), view=None, title=None):
+          slope=False, edge=False, slider=False, lines=(), view=None, title=None, equal=None):
     """``fit`` draws each sheet's asymptote + mirror. ``alpha`` picks how the intercept is set:
     None = each sheet's own fitted intercept; a float = the model c(x) = alpha*x; "auto" =
     that model with alpha fitted through the origin across the selected sheets. ``residual``
     plots distance-from-the-line instead of the raw dots; ``intercepts`` plots the per-sheet
-    intercept against x."""
+    intercept against x. ``equal`` re-colors the two-piles-equal losers (see ``equal_mask``):
+    "auto" for the theme's ink, or any CSS color."""
     t = THEME[dark]
     loser_y = load(max(levels) + 1, size)
     total = 0
@@ -578,7 +666,7 @@ def build(levels, size, dark=False, fit=False, alpha=None, residual=False, inter
                   f"(x up to {max(fits) if fits else 0}) = {alpha:.4f}")
 
     if slider:
-        return build_slider(levels, size, pts, fits, alpha, t, view, title)
+        return build_slider(levels, size, pts, fits, alpha, t, view, title, equal=equal)
     if residual:
         return build_residual(levels, size, pts, fits, alpha, t, view, title)
     if intercepts:
@@ -586,8 +674,12 @@ def build(levels, size, dark=False, fit=False, alpha=None, residual=False, inter
                                 lines=lines)
 
     # Traces render in the order they are added. Dots go in first and lines last, so a line
-    # stays visible where its dots merge into a solid band.
-    under, dots, over = [], [], []
+    # stays visible where its dots merge into a solid band. The two-piles-equal highlights sit
+    # between them -- above every level's dots (a highlight is never buried by a later sheet)
+    # but under the fitted lines.
+    under, dots, highs, over = [], [], [], []
+    hi = equal_color(equal, t) if equal else None
+    hi_x, hi_y, hi_z = [], [], []
 
     # The mirror axis, to orient by: each sheet's two branches are reflections across it.
     under.append(go.Scattergl(
@@ -607,6 +699,11 @@ def build(levels, size, dark=False, fit=False, alpha=None, residual=False, inter
             marker=dict(size=5, color=color, line=dict(width=0)),
             hovertemplate="(%{x}, %{y})<extra>x = " + str(x) + "</extra>",
         ))
+        if hi:
+            m = equal_mask(x, y, z)
+            hi_x.append(np.full(int(m.sum()), x))
+            hi_y.append(y[m])
+            hi_z.append(z[m])
         if x not in fits:
             continue
 
@@ -630,6 +727,13 @@ def build(levels, size, dark=False, fit=False, alpha=None, residual=False, inter
                 hovertemplate=f"z = {m:.4f} y + {cc:.1f}<br>{extra}<br>{note}<extra>x = {x}</extra>",
             ))
 
+    # One trace for the whole family, not one per level: these are a handful of dots per sheet
+    # and they read as a single population, so they get a single legend entry that toggles them
+    # all at once.
+    if hi and hi_y:
+        highs.append(equal_trace(np.concatenate(hi_x), np.concatenate(hi_y),
+                                 np.concatenate(hi_z), hi, t, legendrank=2))
+
     for j, spec in enumerate(lines):
         m = parse_number(spec.get("slope", 0))
         c = parse_number(spec.get("intercept", 0))
@@ -641,7 +745,7 @@ def build(levels, size, dark=False, fit=False, alpha=None, residual=False, inter
             hovertemplate=f"z = {m:.4f} y + {c:.1f}<extra>{label}</extra>",
         ))
 
-    fig = go.Figure(under + dots + over)
+    fig = go.Figure(under + dots + highs + over)
 
     if total > 600_000:
         print(f"warning: {total:,} points -- pans may stutter. Fewer levels, or a smaller "
@@ -699,6 +803,11 @@ def main():
     p.add_argument("--slider", action="store_true",
                    help="raw z-vs-y plot with a slider that steps through one sheet at a time "
                         "(a flip-book for comparing consecutive x). Respects --fit.")
+    p.add_argument("--equal", nargs="?", const="auto", default=None, metavar="COLOR",
+                   help="give the losers with two piles the same size their own color: the dots "
+                        "on y=x, z=x (triple (x,x,other)) and y=z (triple (x,other,other)). Bare "
+                        "--equal uses high-contrast ink; --equal \"#e34948\" or --equal magenta "
+                        "picks your own. Works on the raw and --slider views.")
     p.add_argument("--edge", action="store_true",
                    help="on --intercepts, also overlay the y=0 edge dot (a separate quantity, "
                         "not the line's intercept).")
@@ -742,17 +851,18 @@ def main():
     slope = a.slope or s.get("slope", False)
     slider = a.slider or s.get("slider", False)
     edge = a.edge or s.get("edge", False)
+    equal = a.equal if a.equal is not None else s.get("equal")
     # Lines from --line stack on top of whatever the session already carries.
     lines = list(s.get("lines", [])) + [parse_line(spec) for spec in a.line]
     s = dict(s, levels=levels, size=size, alpha=alpha, residual=resid, intercepts=intercepts,
-             slope=slope, slider=slider, edge=edge, lines=lines,
+             slope=slope, slider=slider, edge=edge, equal=equal, lines=lines,
              # --alpha is about the fitted lines' intercepts, so it needs the fit turned on.
              fit=a.fit or resid or intercepts or (alpha is not None) or s.get("fit", False),
              dark=a.dark or s.get("dark", False))
 
     fig = build(levels, size, dark=s["dark"], fit=s["fit"], alpha=alpha, residual=resid,
-                intercepts=intercepts, slope=slope, slider=slider, edge=edge, lines=lines,
-                view=s.get("view"), title=s.get("title"))
+                intercepts=intercepts, slope=slope, slider=slider, edge=edge, equal=equal,
+                lines=lines, view=s.get("view"), title=s.get("title"))
 
     name = a.save or a.session or "plot"
     if a.save:
@@ -763,7 +873,8 @@ def main():
     fig.write_html(out, include_plotlyjs="cdn",
                    config=dict(scrollZoom=True, displaylogo=False,
                                modeBarButtonsToAdd=["drawline", "eraseshape"],
-                               toImageButtonOptions=dict(format="png", scale=2)))
+                               toImageButtonOptions=dict(format="png", scale=2)),
+                   post_script=SLIDER_KEYS_JS)
     print(f"wrote {out}")
     if not a.no_open:
         webbrowser.open(out.resolve().as_uri())

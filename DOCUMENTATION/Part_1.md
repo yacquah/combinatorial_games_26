@@ -1,5 +1,3 @@
-
-```markdown
 # Combinatorial Game Foundations & Renormalization Framework
 
 ## 1. Combinatorial Game Foundations
@@ -298,7 +296,3 @@ $$V_{x+1} = R * V_x \quad \text{where } R = \begin{bmatrix} (I + M_1) & M_2 \\ L
 
 
 4. **Geometry**: Displays $V$-shaped rays emanating from the origin in position space, scaling linearly with $x$.
-
-```
-
-```
